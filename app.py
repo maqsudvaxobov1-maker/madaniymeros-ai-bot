@@ -1,36 +1,82 @@
 import os
 import json
 import time
-import threading
+import urllib.request
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.request import Request, urlopen
-from urllib.parse import urlencode
+import threading
 
-TOKEN = os.environ.get("BOT_TOKEN")
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 PORT = int(os.environ.get("PORT", "10000"))
 
-if not TOKEN:
+if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN topilmadi")
 
-API = f"https://api.telegram.org/bot{TOKEN}/"
+if not OPENAI_API_KEY:
+    raise RuntimeError("OPENAI_API_KEY topilmadi")
 
 
-def telegram(method, data=None):
-    if data is None:
-        data = {}
+def telegram(method, data):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
+    body = urllib.parse.urlencode(data).encode("utf-8")
 
-    body = urlencode(data).encode("utf-8")
-    req = Request(API + method, data=body)
+    request = urllib.request.Request(
+        url,
+        data=body,
+        method="POST"
+    )
 
-    with urlopen(req, timeout=60) as response:
+    with urllib.request.urlopen(request, timeout=60) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
 def send_message(chat_id, text):
     telegram("sendMessage", {
         "chat_id": chat_id,
-        "text": text
+        "text": text[:4000]
     })
+
+
+def ask_ai(question):
+    url = "https://api.openai.com/v1/chat/completions"
+
+    data = {
+        "model": "gpt-4o-mini",
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "Siz O'zbekiston madaniy merosi bo'yicha AI "
+                    "yordamchisiz. Savollarga o'zbek tilida aniq, "
+                    "tushunarli va foydali javob bering. "
+                    "Madaniy meros obyektlari, tarixiy-me'moriy "
+                    "yodgorliklar, restavratsiya va loyiha "
+                    "hujjatlari bo'yicha yordam bering."
+                )
+            },
+            {
+                "role": "user",
+                "content": question
+            }
+        ],
+        "temperature": 0.3
+    }
+
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(data).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {OPENAI_API_KEY}"
+        },
+        method="POST"
+    )
+
+    with urllib.request.urlopen(request, timeout=90) as response:
+        result = json.loads(response.read().decode("utf-8"))
+
+    return result["choices"][0]["message"]["content"]
 
 
 def bot_loop():
@@ -40,14 +86,13 @@ def bot_loop():
 
     while True:
         try:
-            result = telegram("getUpdates", {
-                "offset": offset,
-                "timeout": 30
-            })
-
-            if not result.get("ok"):
-                time.sleep(5)
-                continue
+            result = telegram(
+                "getUpdates",
+                {
+                    "offset": offset,
+                    "timeout": 30
+                }
+            )
 
             for update in result.get("result", []):
                 offset = update["update_id"] + 1
@@ -60,77 +105,74 @@ def bot_loop():
                 chat_id = message["chat"]["id"]
                 text = message.get("text", "").strip()
 
+                if not text:
+                    continue
+
                 if text == "/start":
-                    answer = (
+                    send_message(
+                        chat_id,
                         "Ассалому алайкум! 👋\n\n"
-                        "Madaniy Meros AI ботга хуш келибсиз.\n\n"
-                        "Маданий мерос объектлари бўйича "
+                        "Мен Madaniy Meros AI ёрдамчисиман.\n\n"
+                        "Маданий мерос, тарихий-меъморий "
+                        "объектлар ва лойиҳалар бўйича "
                         "саволингизни ёзинг."
                     )
+                    continue
 
-                elif text:
-                    answer = (
-                        "Саволингиз қабул қилинди. ✅\n\n"
-                        f"Сизнинг саволингиз:\n{text}\n\n"
-                        "Madaniy Meros AI хизмати ишлаяпти."
+                try:
+                    answer = ask_ai(text)
+                    send_message(chat_id, answer)
+
+                except Exception as error:
+                    print("OpenAI xatosi:", error)
+
+                    send_message(
+                        chat_id,
+                        "AI жавобида хатолик юз берди. "
+                        "Бироздан кейин қайта уриниб кўринг."
                     )
 
-                else:
-                    answer = "Илтимос, матнли савол юборинг."
-
-                send_message(chat_id, answer)
-
-        except Exception as e:
-            print("Bot xatosi:", e)
+        except Exception as error:
+            print("Telegram xatosi:", error)
             time.sleep(5)
 
 
 class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
-        if self.path == "/health":
-            self.send_response(200)
-            self.send_header(
-                "Content-Type",
-                "text/plain; charset=utf-8"
-            )
-            self.end_headers()
-            self.wfile.write(b"OK")
-            return
-
         self.send_response(200)
         self.send_header(
             "Content-Type",
-            "text/html; charset=utf-8"
+            "text/plain; charset=utf-8"
         )
         self.end_headers()
+        self.wfile.write(
+            b"Madaniy Meros AI Bot ishlayapti!"
+        )
 
-        html = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <title>Madaniy Meros AI Bot</title>
-        </head>
-        <body>
-            <h1>Madaniy Meros AI Bot</h1>
-            <p>Telegram bot server ishlayapti.</p>
-        </body>
-        </html>
-        """
+    def do_HEAD(self):
+        self.send_response(200)
+        self.end_headers()
 
-        self.wfile.write(html.encode("utf-8"))
+    def log_message(self, format, *args):
+        return
 
 
 def start_server():
-    server = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Server port {PORT} da ishga tushdi")
+    server = HTTPServer(
+        ("0.0.0.0", PORT),
+        Handler
+    )
+
+    print(f"Server {PORT} portda ishga tushdi")
     server.serve_forever()
 
 
-threading.Thread(
-    target=bot_loop,
-    daemon=True
-).start()
+if __name__ == "__main__":
 
-start_server()
+    threading.Thread(
+        target=start_server,
+        daemon=True
+    ).start()
+
+    bot_loop()
