@@ -1,34 +1,33 @@
 import os
 import json
 import time
+import threading
 import urllib.request
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
-import threading
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-PORT = int(os.environ.get("PORT", "10000"))
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+PORT = int(os.getenv("PORT", "10000"))
 
 if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN topilmadi")
+    raise Exception("BOT_TOKEN topilmadi")
 
 if not OPENAI_API_KEY:
-    raise RuntimeError("OPENAI_API_KEY topilmadi")
+    raise Exception("OPENAI_API_KEY topilmadi")
 
 
 def telegram(method, data):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
-    body = urllib.parse.urlencode(data).encode("utf-8")
 
     request = urllib.request.Request(
         url,
-        data=body,
+        data=urllib.parse.urlencode(data).encode(),
         method="POST"
     )
 
     with urllib.request.urlopen(request, timeout=60) as response:
-        return json.loads(response.read().decode("utf-8"))
+        return json.loads(response.read().decode())
 
 
 def send_message(chat_id, text):
@@ -38,7 +37,7 @@ def send_message(chat_id, text):
     })
 
 
-def ask_ai(question):
+def openai_answer(question):
     url = "https://api.openai.com/v1/chat/completions"
 
     data = {
@@ -47,52 +46,46 @@ def ask_ai(question):
             {
                 "role": "system",
                 "content": (
-                    "Siz O'zbekiston madaniy merosi bo'yicha AI "
-                    "yordamchisiz. Savollarga o'zbek tilida aniq, "
-                    "tushunarli va foydali javob bering. "
-                    "Madaniy meros obyektlari, tarixiy-me'moriy "
-                    "yodgorliklar, restavratsiya va loyiha "
-                    "hujjatlari bo'yicha yordam bering."
+                    "Siz Madaniy Meros AI yordamchisisiz. "
+                    "O'zbekiston madaniy merosi, tarixiy-me'moriy "
+                    "obyektlar va restavratsiya loyihalari bo'yicha "
+                    "o'zbek tilida aniq va foydali javob bering."
                 )
             },
             {
                 "role": "user",
                 "content": question
             }
-        ],
-        "temperature": 0.3
+        ]
     }
 
     request = urllib.request.Request(
         url,
-        data=json.dumps(data).encode("utf-8"),
+        data=json.dumps(data).encode(),
         headers={
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {OPENAI_API_KEY}"
+            "Authorization": "Bearer " + OPENAI_API_KEY
         },
         method="POST"
     )
 
     with urllib.request.urlopen(request, timeout=90) as response:
-        result = json.loads(response.read().decode("utf-8"))
+        result = json.loads(response.read().decode())
 
     return result["choices"][0]["message"]["content"]
 
 
-def bot_loop():
-    offset = 0
+def telegram_bot():
+    print("TELEGRAM BOT ISHLADI")
 
-    print("Telegram bot ishga tushdi")
+    offset = 0
 
     while True:
         try:
-            result = telegram(
-                "getUpdates",
-                {
-                    "offset": offset,
-                    "timeout": 30
-                }
-            )
+            result = telegram("getUpdates", {
+                "offset": offset,
+                "timeout": 30
+            })
 
             for update in result.get("result", []):
                 offset = update["update_id"] + 1
@@ -105,35 +98,30 @@ def bot_loop():
                 chat_id = message["chat"]["id"]
                 text = message.get("text", "").strip()
 
-                if not text:
-                    continue
-
                 if text == "/start":
                     send_message(
                         chat_id,
                         "Ассалому алайкум! 👋\n\n"
-                        "Мен Madaniy Meros AI ёрдамчисиман.\n\n"
-                        "Маданий мерос, тарихий-меъморий "
-                        "объектлар ва лойиҳалар бўйича "
-                        "саволингизни ёзинг."
+                        "Мен Madaniy Meros AI ботман.\n\n"
+                        "Маданий мерос бўйича саволингизни ёзинг."
                     )
                     continue
 
-                try:
-                    answer = ask_ai(text)
-                    send_message(chat_id, answer)
+                if text:
+                    try:
+                        answer = openai_answer(text)
+                        send_message(chat_id, answer)
 
-                except Exception as error:
-                    print("OpenAI xatosi:", error)
+                    except Exception as error:
+                        print("OPENAI ERROR:", error)
 
-                    send_message(
-                        chat_id,
-                        "AI жавобида хатолик юз берди. "
-                        "Бироздан кейин қайта уриниб кўринг."
-                    )
+                        send_message(
+                            chat_id,
+                            "AI билан боғланишда хатолик юз берди."
+                        )
 
         except Exception as error:
-            print("Telegram xatosi:", error)
+            print("TELEGRAM ERROR:", error)
             time.sleep(5)
 
 
@@ -141,14 +129,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         self.send_response(200)
-        self.send_header(
-            "Content-Type",
-            "text/plain; charset=utf-8"
-        )
+        self.send_header("Content-Type", "text/plain")
         self.end_headers()
-        self.wfile.write(
-            b"Madaniy Meros AI Bot ishlayapti!"
-        )
+        self.wfile.write(b"Madaniy Meros AI Bot ishlayapti!")
 
     def do_HEAD(self):
         self.send_response(200)
@@ -158,21 +141,19 @@ class Handler(BaseHTTPRequestHandler):
         return
 
 
-def start_server():
+def web_server():
     server = HTTPServer(
         ("0.0.0.0", PORT),
         Handler
     )
 
-    print(f"Server {PORT} portda ishga tushdi")
+    print("WEB SERVER ISHLADI")
     server.serve_forever()
 
 
-if __name__ == "__main__":
+threading.Thread(
+    target=web_server,
+    daemon=True
+).start()
 
-    threading.Thread(
-        target=start_server,
-        daemon=True
-    ).start()
-
-    bot_loop()
+telegram_bot()
