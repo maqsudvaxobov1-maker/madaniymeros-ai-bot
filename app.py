@@ -14,7 +14,7 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.6")
 
 TELEGRAM_TIMEOUT = 40
 OPENAI_TIMEOUT = 90
-KNOWLEDGE_FILE = os.path.join(os.path.dirname(__file__), "knowledge_base.json")
+KNOWLEDGE_FILE = os.path.join(os.path.dirname(__file__), "knowledge_base_full.json")
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN topilmadi")
