@@ -6,23 +6,51 @@ import urllib.request
 import urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+
+# ==============================
+# SOZLAMALAR
+# ==============================
+
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+
 PORT = int(os.getenv("PORT", "10000"))
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.6")
 
-TELEGRAM_API = "https://api.telegram.org/bot" + BOT_TOKEN + "/"
+TELEGRAM_TIMEOUT = 40
+OPENAI_TIMEOUT = 90
+
 KNOWLEDGE_FILE = "knowledge_base.json"
 
 
-def http_json(url, data=None, headers=None, timeout=90):
+# ==============================
+# TEKSHIRISH
+# ==============================
+
+if not BOT_TOKEN:
+    raise RuntimeError("BOT_TOKEN topilmadi")
+
+if not OPENAI_API_KEY:
+    raise RuntimeError("OPENAI_API_KEY topilmadi")
+
+
+# ==============================
+# HTTP
+# ==============================
+
+def http_json(url, data=None, headers=None, timeout=60):
+
     if headers is None:
         headers = {}
 
     body = None
 
     if data is not None:
-        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        body = json.dumps(
+            data,
+            ensure_ascii=False
+        ).encode("utf-8")
+
         headers = dict(headers)
         headers["Content-Type"] = "application/json"
 
@@ -34,78 +62,73 @@ def http_json(url, data=None, headers=None, timeout=90):
     )
 
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            return json.loads(
-                response.read().decode("utf-8")
-            )
+        with urllib.request.urlopen(
+            request,
+            timeout=timeout
+        ) as response:
+
+            raw = response.read().decode("utf-8")
+
+            return json.loads(raw)
 
     except urllib.error.HTTPError as e:
-        error_body = e.read().decode("utf-8", errors="ignore")
-        print("HTTP ERROR", e.code, error_body, flush=True)
+
+        error_body = e.read().decode(
+            "utf-8",
+            errors="ignore"
+        )
+
+        print(
+            f"HTTP ERROR {e.code}: {error_body}",
+            flush=True
+        )
+
         raise
 
     except Exception as e:
-        print("HTTP ERROR:", e, flush=True)
+
+        print(
+            f"HTTP ERROR: {e}",
+            flush=True
+        )
+
         raise
+
+
+# ==============================
+# TELEGRAM
+# ==============================
+
+TELEGRAM_API = (
+    "https://api.telegram.org/bot"
+    + BOT_TOKEN
+    + "/"
+)
 
 
 def telegram(method, data=None):
+
     return http_json(
         TELEGRAM_API + method,
         data=data,
-        timeout=60
+        timeout=TELEGRAM_TIMEOUT
     )
 
 
-def load_knowledge_base():
-    try:
-        with open(
-            KNOWLEDGE_FILE,
-            "r",
-            encoding="utf-8"
-        ) as f:
-            data = json.load(f)
-
-        text = json.dumps(
-            data,
-            ensure_ascii=False,
-            indent=2
-        )
-
-        print(
-            "Knowledge base yuklandi:",
-            len(text),
-            "belgi",
-            flush=True
-        )
-
-        return text[:50000]
-
-    except FileNotFoundError:
-        print(
-            "knowledge_base.json topilmadi",
-            flush=True
-        )
-        return ""
-
-    except Exception as e:
-        print(
-            "Knowledge base xatosi:",
-            e,
-            flush=True
-        )
-        return ""
-
-
-KNOWLEDGE_BASE = load_knowledge_base()
-
-
 def check_telegram():
+
+    print(
+        "Telegram token tekshirilmoqda...",
+        flush=True
+    )
+
     result = telegram("getMe")
 
     if not result.get("ok"):
+
         raise RuntimeError(
-            "Telegram token ishlamayapti"
+            "Telegram token ishlamayapti: "
+            + str(result)
         )
 
     bot = result.get("result", {})
@@ -118,36 +141,60 @@ def check_telegram():
 
 
 def remove_webhook():
+
     try:
+
         result = telegram(
             "deleteWebhook",
-            {"drop_pending_updates": False}
+            {
+                "drop_pending_updates": False
+            }
         )
 
         print(
-            "Webhook holati:",
+            "Webhook o'chirildi:",
             result,
             flush=True
         )
 
     except Exception as e:
+
         print(
-            "Webhook xatosi:",
+            "Webhook o'chirishda xato:",
             e,
             flush=True
         )
 
 
+# ==============================
+# XABAR YUBORISH
+# ==============================
+
 def send_message(chat_id, text):
+
     if not text:
-        text = "Javob tayyorlashda xatolik yuz berdi."
+
+        text = (
+            "Javob tayyorlashda "
+            "xatolik yuz berdi."
+        )
 
     text = str(text)
 
-    for i in range(0, len(text), 4000):
-        part = text[i:i + 4000]
+    max_length = 4000
+
+    for i in range(
+        0,
+        len(text),
+        max_length
+    ):
+
+        part = text[
+            i:i + max_length
+        ]
 
         try:
+
             telegram(
                 "sendMessage",
                 {
@@ -157,6 +204,7 @@ def send_message(chat_id, text):
             )
 
         except Exception as e:
+
             print(
                 "Xabar yuborishda xato:",
                 e,
@@ -164,268 +212,211 @@ def send_message(chat_id, text):
             )
 
 
+# ==============================
+# BILIM BAZASINI YUKLASH
+# ==============================
+
+def load_knowledge_base():
+
+    try:
+
+        if not os.path.exists(
+            KNOWLEDGE_FILE
+        ):
+
+            print(
+                "knowledge_base.json topilmadi.",
+                flush=True
+            )
+
+            return []
+
+        with open(
+            KNOWLEDGE_FILE,
+            "r",
+            encoding="utf-8"
+        ) as f:
+
+            data = json.load(f)
+
+        print(
+            "Bilim bazasi yuklandi: "
+            + str(len(data))
+            + " ta hujjat",
+            flush=True
+        )
+
+        return data
+
+    except Exception as e:
+
+        print(
+            "Bilim bazasini yuklashda xato:",
+            e,
+            flush=True
+        )
+
+        return []
+
+
+KNOWLEDGE_BASE = load_knowledge_base()
+
+
+# ==============================
+# BILIM BAZASIDAN MATN OLISH
+# ==============================
+
+def get_knowledge_text(question):
+
+    if not KNOWLEDGE_BASE:
+
+        return ""
+
+    question_words = set(
+        question.lower().split()
+    )
+
+    documents = []
+
+    for document in KNOWLEDGE_BASE:
+
+        title = str(
+            document.get("title", "")
+        )
+
+        meta = str(
+            document.get("meta", "")
+        )
+
+        blocks = document.get(
+            "blocks",
+            []
+        )
+
+        full_text = (
+            title
+            + " "
+            + meta
+            + " "
+            + " ".join(
+                str(x)
+                for x in blocks
+            )
+        )
+
+        lower_text = full_text.lower()
+
+        score = 0
+
+        for word in question_words:
+
+            clean_word = (
+                word
+                .strip(".,!?;:()[]{}\"'")
+            )
+
+            if len(clean_word) >= 3:
+
+                if clean_word in lower_text:
+
+                    score += 1
+
+        documents.append(
+            (
+                score,
+                full_text
+            )
+        )
+
+    documents.sort(
+        key=lambda x: x[0],
+        reverse=True
+    )
+
+    selected = []
+
+    for score, text in documents[:3]:
+
+        if score > 0:
+
+            selected.append(text)
+
+    if not selected:
+
+        return ""
+
+    result = "\n\n".join(
+        selected
+    )
+
+    # Juda katta prompt bo'lib ketmasligi uchun
+    return result[:18000]
+
+
+# ==============================
+# OPENAI
+# ==============================
+
 def openai_answer(question):
+
+    knowledge = get_knowledge_text(
+        question
+    )
 
     system_text = """
 Siz "Madaniy Meros AI" nomli
 O'zbekiston madaniy merosi bo'yicha
-ixtisoslashgan AI yordamchisiz.
+ixtisoslashgan yordamchisiz.
 
 Siz quyidagi mavzularda yordam berasiz:
 
 - madaniy meros obyektlari;
 - tarixiy-me'moriy obyektlar;
-- arxeologiya;
+- ularni muhofaza qilish;
 - restavratsiya;
+- konservatsiya;
 - ta'mirlash;
 - moslashtirish;
-- muhofaza qilish;
 - loyiha hujjatlari;
 - ilmiy-ekspert kengashi;
-- madaniy meros obyektlaridan foydalanish.
+- madaniy meros hududlarida qurilish;
+- muhofaza zonalari;
+- amaldagi qonunchilik.
 
 Javoblarni o'zbek tilida bering.
-
-Eng muhim qoida:
-Quyida berilgan KNOWLEDGE BASE ma'lumotlaridan
-birinchi navbatda foydalaning.
-
-Agar savolga aniq javob KNOWLEDGE BASEda bo'lmasa,
-buni ochiq ayting.
-
-Qonun, qaror yoki boshqa normativ hujjat
-raqamini o'ylab topmang.
-
-Aniq bo'lmagan ma'lumotni fakt sifatida bermang.
 
 Javob:
 - aniq;
 - tushunarli;
 - amaliy;
-- qisqa;
+- imkon qadar qisqa;
 - kerak bo'lsa punktlar bilan bo'lsin.
+
+Agar bilim bazasida tegishli ma'lumot mavjud bo'lsa,
+avvalo shu ma'lumotga tayaning.
+
+Huquqiy masalalarda qonun yoki qaror raqamini
+o'ylab topmang.
+
+Agar ma'lumot yetarli bo'lmasa,
+buni ochiq ayting.
+
+Bilim bazasidagi hujjatni amaldagi qonunchilik
+sifatida ko'rsatishda ehtiyot bo'ling.
 """
 
-    prompt = (
-        "KNOWLEDGE BASE:\n"
-        + KNOWLEDGE_BASE
-        + "\n\nFOYDALANUVCHI SAVOLI:\n"
-        + question
-    )
 
-    data = {
-        "model": OPENAI_MODEL,
-        "messages": [
-            {
-                "role": "system",
-                "content": system_text
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ]
-    }
+    if knowledge:
 
-    headers = {
-        "Authorization":
-            "Bearer " + OPENAI_API_KEY,
-        "Content-Type":
-            "application/json"
-    }
+        system_text += """
 
-    result = http_json(
-        "https://api.openai.com/v1/chat/completions",
-        data=data,
-        headers=headers,
-        timeout=120
-    )
+QUYIDA MADANIY MEROS BO'YICHA
+BILIM BAZASIDAN TOPILGAN MA'LUMOT:
 
-    choices = result.get("choices", [])
+------------------------------
 
-    if not choices:
-        return "OpenAI javob qaytarmadi."
+""" + knowledge + """
 
-    message = choices[0].get(
-        "message",
-        {}
-    )
+------------------------------
 
-    answer = message.get(
-        "content",
-        ""
-    )
-
-    if not answer:
-        return "Javob bo'sh qaytdi."
-
-    return answer.strip()
-
-
-def start_message():
-    return (
-        "🏛 Assalomu alaykum!\n\n"
-        "Men — Madaniy Meros AI yordamchisiman.\n\n"
-        "O'zbekiston madaniy merosi, "
-        "tarixiy-me'moriy obyektlar, "
-        "restavratsiya va loyiha hujjatlari "
-        "bo'yicha savollaringizga javob beraman.\n\n"
-        "Savolingizni yuboring."
-    )
-
-
-def process_update(update):
-
-    try:
-        message = update.get("message")
-
-        if not message:
-            return
-
-        chat = message.get("chat", {})
-        chat_id = chat.get("id")
-        text = message.get("text", "")
-
-        if not chat_id or not text:
-            return
-
-        text = text.strip()
-
-        print(
-            "Savol:",
-            text,
-            flush=True
-        )
-
-        if text.startswith("/start"):
-            send_message(
-                chat_id,
-                start_message()
-            )
-            return
-
-        if text.startswith("/help"):    send_message(
-        chat_id,
-        "Savolingizni oddiy matn ko'rinishida yuboring.\n\n"
-        "Masalan:\n"
-        "• Madaniy meros obyekti nima?\n"
-        "• Restavratsiya loyihasida nimalar bo'lishi kerak?\n"
-        "• Tarixiy binoning tashqi ko'rinishini o'zgartirish mumkinmi?"
-    )
-    return
-
-send_message(chat_id, "⏳ Savolingiz ko'rib chiqilmoqda...")
-
-try:
-    answer = openai_answer(text)
-    send_message(chat_id, answer)
-except Exception as e:
-    print("OpenAI xatosi:", e, flush=True)
-    send_message(
-        chat_id,
-        "⚠️ Hozircha javob tayyorlashda texnik xatolik yuz berdi.\n"
-        "Birozdan keyin yana urinib ko'ring."
-    )
-
-
-def telegram_polling():
-    print("Telegram polling boshlandi...", flush=True)
-    offset = None
-
-    while True:
-        try:
-            data = {
-                "timeout": 30,
-                "limit": 100,
-                "allowed_updates": ["message"]
-            }
-
-            if offset is not None:
-                data["offset"] = offset
-
-            result = telegram("getUpdates", data)
-
-            if not result.get("ok"):
-                print("getUpdates xatosi:", result, flush=True)
-                time.sleep(5)
-                continue
-
-            updates = result.get("result", [])
-
-            for update in updates:
-                update_id = update.get("update_id")
-
-                if update_id is not None:
-                    offset = update_id + 1
-
-                process_update(update)
-
-        except Exception as e:
-            print("Telegram polling xatosi:", e, flush=True)
-            time.sleep(5)
-
-
-class HealthHandler(BaseHTTPRequestHandler):
-
-    def do_GET(self):
-        body = "Madaniy Meros AI Bot ishlayapti!".encode("utf-8")
-
-        self.send_response(200)
-        self.send_header(
-            "Content-Type",
-            "text/plain; charset=utf-8"
-        )
-        self.send_header(
-            "Content-Length",
-            str(len(body))
-        )
-        self.end_headers()
-
-        self.wfile.write(body)
-
-    def do_HEAD(self):
-        self.send_response(200)
-        self.send_header(
-            "Content-Type",
-            "text/plain"
-        )
-        self.end_headers()
-
-    def log_message(self, format, *args):
-        return
-
-
-def run_web_server():
-    server = ThreadingHTTPServer(
-        ("0.0.0.0", PORT),
-        HealthHandler
-    )
-
-    print(
-        f"Web server PORT={PORT}",
-        flush=True
-    )
-
-    server.serve_forever()
-
-
-def main():
-    print("====================================", flush=True)
-    print("MADANIY MEROS AI BOT", flush=True)
-    print("====================================", flush=True)
-
-    check_telegram()
-    remove_webhook()
-
-    web_thread = threading.Thread(
-        target=run_web_server,
-        daemon=True
-    )
-
-    web_thread.start()
-
-    telegram_polling()
-
-
-if __name__ == "__main__":
-    main()
+Javobni yuq
