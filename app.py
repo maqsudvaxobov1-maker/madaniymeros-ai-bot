@@ -7,29 +7,68 @@ import urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
+# ============================================================
+# MADANIY MEROS AI
+# Telegram + OpenAI Responses API + knowledge_base.json
+# ============================================================
+
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 
 PORT = int(os.getenv("PORT", "10000"))
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.6")
+
+# Render Environment Variables orqali o'zgartirish mumkin
+OPENAI_MODEL = os.getenv(
+    "OPENAI_MODEL",
+    "gpt-5.6"
+).strip()
+
+KNOWLEDGE_FILE = "knowledge_base.json"
 
 TELEGRAM_TIMEOUT = 40
 OPENAI_TIMEOUT = 90
 
-KNOWLEDGE_FILE = "knowledge_base.json"
 
+# ============================================================
+# STARTUP TEKSHIRUV
+# ============================================================
 
 if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN topilmadi")
+    raise RuntimeError(
+        "BOT_TOKEN topilmadi. Render Environment Variables ni tekshiring."
+    )
 
 if not OPENAI_API_KEY:
-    raise RuntimeError("OPENAI_API_KEY topilmadi")
+    raise RuntimeError(
+        "OPENAI_API_KEY topilmadi. Render Environment Variables ni tekshiring."
+    )
 
 
-TELEGRAM_API = "https://api.telegram.org/bot" + BOT_TOKEN + "/"
+# ============================================================
+# URL
+# ============================================================
+
+TELEGRAM_API = (
+    "https://api.telegram.org/bot"
+    + BOT_TOKEN
+    + "/"
+)
+
+OPENAI_URL = (
+    "https://api.openai.com/v1/responses"
+)
 
 
-def http_json(url, data=None, headers=None, timeout=60):
+# ============================================================
+# UMUMIY HTTP FUNKSIYA
+# ============================================================
+
+def http_json(
+    url,
+    data=None,
+    headers=None,
+    timeout=60
+):
 
     if headers is None:
         headers = {}
@@ -37,19 +76,27 @@ def http_json(url, data=None, headers=None, timeout=60):
     body = None
 
     if data is not None:
+
         body = json.dumps(
             data,
             ensure_ascii=False
         ).encode("utf-8")
 
         headers = dict(headers)
-        headers["Content-Type"] = "application/json"
+
+        headers["Content-Type"] = (
+            "application/json"
+        )
 
     request = urllib.request.Request(
         url,
         data=body,
         headers=headers,
-        method="POST" if data is not None else "GET"
+        method=(
+            "POST"
+            if data is not None
+            else "GET"
+        )
     )
 
     try:
@@ -59,7 +106,9 @@ def http_json(url, data=None, headers=None, timeout=60):
             timeout=timeout
         ) as response:
 
-            raw = response.read().decode("utf-8")
+            raw = response.read().decode(
+                "utf-8"
+            )
 
             return json.loads(raw)
 
@@ -71,7 +120,10 @@ def http_json(url, data=None, headers=None, timeout=60):
         )
 
         print(
-            f"HTTP ERROR {e.code}: {error_body}",
+            "HTTP ERROR "
+            + str(e.code)
+            + ": "
+            + error_body,
             flush=True
         )
 
@@ -80,14 +132,22 @@ def http_json(url, data=None, headers=None, timeout=60):
     except Exception as e:
 
         print(
-            f"HTTP ERROR: {e}",
+            "HTTP ERROR: "
+            + str(e),
             flush=True
         )
 
         raise
 
 
-def telegram(method, data=None):
+# ============================================================
+# TELEGRAM
+# ============================================================
+
+def telegram(
+    method,
+    data=None
+):
 
     return http_json(
         TELEGRAM_API + method,
@@ -103,7 +163,9 @@ def check_telegram():
         flush=True
     )
 
-    result = telegram("getMe")
+    result = telegram(
+        "getMe"
+    )
 
     if not result.get("ok"):
 
@@ -112,11 +174,16 @@ def check_telegram():
             + str(result)
         )
 
-    bot = result.get("result", {})
+    bot = result.get(
+        "result",
+        {}
+    )
 
     print(
         "Telegram bot OK: @"
-        + str(bot.get("username")),
+        + str(
+            bot.get("username")
+        ),
         flush=True
     )
 
@@ -133,7 +200,11 @@ def remove_webhook():
         )
 
         print(
-            "Webhook o'chirildi:",
+            "Webhook o'chirildi.",
+            flush=True
+        )
+
+        print(
             result,
             flush=True
         )
@@ -141,29 +212,43 @@ def remove_webhook():
     except Exception as e:
 
         print(
-            "Webhook o'chirishda xato:",
-            e,
+            "Webhook o'chirishda xato: "
+            + str(e),
             flush=True
         )
 
 
-def send_message(chat_id, text):
+# ============================================================
+# TELEGRAM XABAR YUBORISH
+# ============================================================
+
+def send_message(
+    chat_id,
+    text
+):
 
     if not text:
 
-        text = "Javob tayyorlashda xatolik yuz berdi."
+        text = (
+            "Javob tayyorlashda "
+            "xatolik yuz berdi."
+        )
 
     text = str(text)
 
+    # Telegram 4096 belgidan oshgan xabarlarni
+    # bo'lib yuboradi
     max_length = 4000
 
-    for i in range(
+    for start in range(
         0,
         len(text),
         max_length
     ):
 
-        part = text[i:i + max_length]
+        part = text[
+            start:start + max_length
+        ]
 
         try:
 
@@ -178,47 +263,68 @@ def send_message(chat_id, text):
         except Exception as e:
 
             print(
-                "Xabar yuborishda xato:",
-                e,
+                "Xabar yuborishda xato: "
+                + str(e),
                 flush=True
             )
 
+
+# ============================================================
+# KNOWLEDGE BASE
+# ============================================================
 
 def load_knowledge_base():
 
+    if not os.path.exists(
+        KNOWLEDGE_FILE
+    ):
+
+        print(
+            "DIQQAT: "
+            + KNOWLEDGE_FILE
+            + " topilmadi.",
+            flush=True
+        )
+
+        return []
+
     try:
-
-        if not os.path.exists(
-            KNOWLEDGE_FILE
-        ):
-
-            print(
-                "knowledge_base.json topilmadi.",
-                flush=True
-            )
-
-            return []
 
         with open(
             KNOWLEDGE_FILE,
             "r",
             encoding="utf-8"
-        ) as f:
+        ) as file:
 
-            data = json.load(f)
+            data = json.load(file)
 
         print(
             "Bilim bazasi yuklandi.",
             flush=True
         )
 
+        if isinstance(data, list):
+
+            print(
+                "Hujjatlar soni: "
+                + str(len(data)),
+                flush=True
+            )
+
+        elif isinstance(data, dict):
+
+            print(
+                "Bilim bazasi: dict format.",
+                flush=True
+            )
+
         return data
 
     except Exception as e:
 
         print(
-            "Bilim bazasini yuklashda xato:",
-            e,
+            "Bilim bazasini o'qishda xato: "
+            + str(e),
             flush=True
         )
 
@@ -228,135 +334,299 @@ def load_knowledge_base():
 KNOWLEDGE_BASE = load_knowledge_base()
 
 
-def document_to_text(document):
+# ============================================================
+# ISTALGAN JSON ELEMENTNI MATNGA AYLANTIRISH
+# ============================================================
 
-    if isinstance(document, str):
+def value_to_text(value):
 
-        return document
+    if value is None:
 
-    if isinstance(document, dict):
+        return ""
+
+    if isinstance(
+        value,
+        str
+    ):
+
+        return value
+
+    if isinstance(
+        value,
+        list
+    ):
 
         parts = []
 
-        for key, value in document.items():
+        for item in value:
 
-            if isinstance(value, list):
+            item_text = value_to_text(
+                item
+            )
 
-                for item in value:
-
-                    parts.append(
-                        str(item)
-                    )
-
-            elif isinstance(value, dict):
+            if item_text:
 
                 parts.append(
-                    json.dumps(
-                        value,
-                        ensure_ascii=False
-                    )
-                )
-
-            else:
-
-                parts.append(
-                    str(value)
+                    item_text
                 )
 
         return "\n".join(parts)
 
-    if isinstance(document, list):
-
-        return "\n".join(
-            str(x)
-            for x in document
-        )
-
-    return str(document)
-
-
-def get_knowledge_text(question):
-
-    if not KNOWLEDGE_BASE:
-
-        return ""
-
-    question_words = set(
-        question.lower().split()
-    )
-
-    documents = []
-
     if isinstance(
-        KNOWLEDGE_BASE,
+        value,
         dict
     ):
 
-        source_documents = []
+        parts = []
 
-        for key, value in KNOWLEDGE_BASE.items():
+        for key, item in value.items():
 
-            source_documents.append(
-                {
-                    "title": key,
-                    "content": value
-                }
+            item_text = value_to_text(
+                item
             )
 
-    elif isinstance(
-        KNOWLEDGE_BASE,
+            if item_text:
+
+                parts.append(
+                    str(key)
+                    + ": "
+                    + item_text
+                )
+
+        return "\n".join(parts)
+
+    return str(value)
+
+
+# ============================================================
+# HUJJAT NOMINI ANIQLASH
+# ============================================================
+
+def get_document_title(
+    document,
+    index
+):
+
+    if isinstance(
+        document,
+        dict
+    ):
+
+        possible_keys = [
+            "title",
+            "name",
+            "document_title",
+            "act_title",
+            "ACT_TITLE",
+            "filename",
+            "file"
+        ]
+
+        for key in possible_keys:
+
+            if key in document:
+
+                value = str(
+                    document.get(key)
+                ).strip()
+
+                if value:
+
+                    return value
+
+    return (
+        "Hujjat "
+        + str(index + 1)
+    )
+
+
+# ============================================================
+# BILIM BAZASINI HUJJATLARGA AJRATISH
+# ============================================================
+
+def get_documents():
+
+    data = KNOWLEDGE_BASE
+
+    if isinstance(
+        data,
         list
     ):
 
-        source_documents = KNOWLEDGE_BASE
+        return data
 
-    else:
+    if isinstance(
+        data,
+        dict
+    ):
 
-        source_documents = [
-            KNOWLEDGE_BASE
-        ]
+        # Agar asosiy kalitlardan biri list bo'lsa
+        for key in [
+            "documents",
+            "docs",
+            "knowledge",
+            "items",
+            "data"
+        ]:
 
-    for document in source_documents:
+            value = data.get(key)
 
-        full_text = document_to_text(
+            if isinstance(
+                value,
+                list
+            ):
+
+                return value
+
+        # Dictning o'zini bitta hujjat deb olamiz
+        return [data]
+
+    return [data]
+
+
+# ============================================================
+# SAVOL BO'YICHA BILIM BAZASIDAN ENG MOS HUJJATLARNI TOPISH
+# ============================================================
+
+def search_knowledge(
+    question
+):
+
+    documents = get_documents()
+
+    if not documents:
+
+        return ""
+
+    question_words = (
+        question
+        .lower()
+        .replace(",", " ")
+        .replace(".", " ")
+        .replace("?", " ")
+        .replace("!", " ")
+        .replace(":", " ")
+        .replace(";", " ")
+        .replace("(", " ")
+        .replace(")", " ")
+        .replace('"', " ")
+        .replace("'", " ")
+        .split()
+    )
+
+    # Juda umumiy so'zlarni hisobga olmaslik
+    stop_words = {
+        "va",
+        "ham",
+        "bu",
+        "shu",
+        "uchun",
+        "bilan",
+        "qanday",
+        "nima",
+        "qachon",
+        "qayerda",
+        "mumkin",
+        "kerak",
+        "bor",
+        "bir",
+        "men",
+        "siz",
+        "ning",
+        "dan",
+        "ga",
+        "ni",
+        "da",
+        "mi",
+        "to",
+        "g",
+        "the"
+    }
+
+    useful_words = []
+
+    for word in question_words:
+
+        if (
+            len(word) >= 3
+            and word not in stop_words
+        ):
+
+            useful_words.append(
+                word
+            )
+
+    scored = []
+
+    for index, document in enumerate(
+        documents
+    ):
+
+        text = value_to_text(
             document
         )
 
-        lower_text = full_text.lower()
+        if not text:
+
+            continue
+
+        lower_text = text.lower()
 
         score = 0
 
-        for word in question_words:
+        for word in useful_words:
 
-            clean_word = word.strip(
-                ".,!?;:()[]{}\"'`"
-            )
+            if word in lower_text:
 
-            if len(clean_word) >= 3:
+                score += 1
 
-                if clean_word in lower_text:
+        title = get_document_title(
+            document,
+            index
+        )
 
-                    score += 1
+        title_lower = title.lower()
 
-        documents.append(
+        for word in useful_words:
+
+            if word in title_lower:
+
+                score += 3
+
+        scored.append(
             (
                 score,
-                full_text
+                title,
+                text
             )
         )
 
-    documents.sort(
-        key=lambda x: x[0],
+    scored.sort(
+        key=lambda item: item[0],
         reverse=True
     )
 
     selected = []
 
-    for score, text in documents[:3]:
+    for score, title, text in scored:
 
-        if score > 0 and text:
+        if score <= 0:
 
-            selected.append(text)
+            continue
+
+        # Har bir hujjatdan maksimal 6000 belgi
+        excerpt = text[:6000]
+
+        selected.append(
+            "MANBA: "
+            + title
+            + "\n"
+            + excerpt
+        )
+
+        if len(selected) >= 3:
+
+            break
 
     if not selected:
 
@@ -366,24 +636,113 @@ def get_knowledge_text(question):
         selected
     )
 
+    # OpenAI prompt juda katta bo'lib ketmasligi uchun
     return result[:18000]
 
 
-def openai_answer(question):
+# ============================================================
+# OPENAI RESPONSES API
+# ============================================================
 
-    knowledge = get_knowledge_text(
+def extract_openai_text(
+    result
+):
+
+    # Responses API ning oddiy output_text varianti
+    output_text = result.get(
+        "output_text"
+    )
+
+    if isinstance(
+        output_text,
+        str
+    ) and output_text.strip():
+
+        return output_text.strip()
+
+    # Zaxira parser
+    output = result.get(
+        "output",
+        []
+    )
+
+    parts = []
+
+    if isinstance(
+        output,
+        list
+    ):
+
+        for item in output:
+
+            if not isinstance(
+                item,
+                dict
+            ):
+
+                continue
+
+            content = item.get(
+                "content",
+                []
+            )
+
+            if not isinstance(
+                content,
+                list
+            ):
+
+                continue
+
+            for block in content:
+
+                if not isinstance(
+                    block,
+                    dict
+                ):
+
+                    continue
+
+                text = block.get(
+                    "text"
+                )
+
+                if isinstance(
+                    text,
+                    str
+                ) and text:
+
+                    parts.append(
+                        text
+                    )
+
+    if parts:
+
+        return "\n".join(
+            parts
+        ).strip()
+
+    return ""
+
+
+def openai_answer(
+    question
+):
+
+    knowledge = search_knowledge(
         question
     )
 
     system_text = (
-        "Siz Madaniy Meros AI nomli "
-        "O'zbekiston madaniy merosi bo'yicha "
-        "ixtisoslashgan yordamchisiz.\n\n"
+        "Siz Madaniy Meros AI "
+        "nomli O'zbekiston madaniy "
+        "merosi bo'yicha ixtisoslashgan "
+        "yordamchisiz.\n\n"
 
-        "Siz quyidagi mavzularda yordam berasiz:\n"
+        "Asosiy yo'nalishlar:\n"
         "- madaniy meros obyektlari;\n"
         "- tarixiy-me'moriy obyektlar;\n"
-        "- ularni muhofaza qilish;\n"
+        "- muhofaza qilish;\n"
         "- restavratsiya;\n"
         "- konservatsiya;\n"
         "- ta'mirlash;\n"
@@ -391,58 +750,46 @@ def openai_answer(question):
         "- loyiha hujjatlari;\n"
         "- ilmiy-ekspert kengashi;\n"
         "- muhofaza zonalari;\n"
-        "- madaniy meros hududlaridagi qurilish.\n\n"
+        "- madaniy meros hududlaridagi "
+        "qurilish.\n\n"
 
         "Javoblarni o'zbek tilida bering.\n"
-        "Javob aniq, tushunarli va amaliy bo'lsin.\n"
+        "Javob aniq va amaliy bo'lsin.\n"
         "Kerak bo'lsa punktlardan foydalaning.\n\n"
 
-        "Agar bilim bazasida tegishli ma'lumot bo'lsa, "
+        "MUHIM QOIDA:\n"
+        "Agar quyida bilim bazasidan "
+        "ma'lumot berilgan bo'lsa, "
         "avvalo shu ma'lumotga tayaning.\n"
 
-        "Huquqiy masalalarda qonun yoki qaror raqamini "
+        "Qonun, qaror, sana yoki raqamni "
         "o'ylab topmang.\n"
 
-        "Agar ma'lumot yetarli bo'lmasa, "
-        "buni ochiq ayting."
+        "Bilim bazasida javob uchun yetarli "
+        "ma'lumot bo'lmasa, buni ochiq "
+        "ayting va tasdiqlanmagan faktni "
+        "aniq fakt sifatida bermang."
     )
 
     if knowledge:
 
         system_text += (
             "\n\n"
-            "BILIM BAZASIDAN TOPILGAN MA'LUMOT:\n"
+            "BILIM BAZASIDAN TOPILGAN "
+            "TEGISHLI MA'LUMOTLAR:\n"
             "--------------------------------\n"
             + knowledge
             + "\n"
             "--------------------------------\n"
-            "Javobni ushbu ma'lumotlarga tayangan "
-            "holda shakllantiring."
         )
 
-    url = (
-        "https://api.openai.com/v1/chat/completions"
-    )
-
-    data = {
+    request_data = {
 
         "model": OPENAI_MODEL,
 
-        "messages": [
+        "instructions": system_text,
 
-            {
-                "role": "system",
-                "content": system_text
-            },
-
-            {
-                "role": "user",
-                "content": question
-            }
-
-        ],
-
-        "temperature": 0.3
+        "input": question
     }
 
     headers = {
@@ -454,53 +801,109 @@ def openai_answer(question):
             "application/json"
     }
 
-    result = http_json(
-        url,
-        data=data,
-        headers=headers,
-        timeout=OPENAI_TIMEOUT
-    )
+    try:
 
-    choices = result.get(
-        "choices",
-        []
-    )
+        result = http_json(
+            OPENAI_URL,
+            data=request_data,
+            headers=headers,
+            timeout=OPENAI_TIMEOUT
+        )
 
-    if not choices:
+        answer = extract_openai_text(
+            result
+        )
 
-        return "OpenAI javob qaytarmadi."
+        if answer:
 
-    message = choices[0].get(
-        "message",
-        {}
-    )
+            return answer
 
-    answer = message.get(
-        "content",
-        ""
-    )
+        print(
+            "OpenAI bo'sh javob qaytardi.",
+            flush=True
+        )
 
-    if not answer:
+        return (
+            "Kechirasiz, javob tayyorlashda "
+            "ma'lumot olinmadi."
+        )
 
-        return "Javob bo'sh qaytdi."
+    except urllib.error.HTTPError as e:
 
-    return answer.strip()
+        print(
+            "OPENAI HTTP ERROR "
+            + str(e.code),
+            flush=True
+        )
 
+        raise
+
+    except Exception as e:
+
+        print(
+            "OPENAI XATOSI: "
+            + str(e),
+            flush=True
+        )
+
+        raise
+
+
+# ============================================================
+# START
+# ============================================================
 
 def start_message():
 
     return (
         "🏛 Assalomu alaykum!\n\n"
-        "Men — Madaniy Meros AI yordamchisiman.\n\n"
+
+        "Men — Madaniy Meros AI "
+        "yordamchisiman.\n\n"
+
         "O'zbekiston madaniy merosi, "
         "tarixiy-me'moriy obyektlar, "
-        "restavratsiya va loyiha hujjatlari "
-        "bo'yicha savollaringizga javob beraman.\n\n"
+        "restavratsiya, muhofaza va "
+        "loyiha hujjatlari bo'yicha "
+        "savollaringizga yordam beraman.\n\n"
+
         "Savolingizni yuboring."
     )
 
 
-def process_update(update):
+# ============================================================
+# HELP
+# ============================================================
+
+def help_message():
+
+    return (
+        "📚 Madaniy Meros AI\n\n"
+
+        "Savolingizni oddiy matn "
+        "ko'rinishida yuboring.\n\n"
+
+        "Masalan:\n"
+        "• Madaniy meros obyekti nima?\n"
+        "• 269-II-son Qonun qachon "
+        "qabul qilingan?\n"
+        "• Restavratsiya loyihasida "
+        "nimalar bo'lishi kerak?\n"
+        "• Ilmiy-ekspert kengashi "
+        "nima bilan shug'ullanadi?\n"
+        "• Tarixiy binoning tashqi "
+        "ko'rinishini o'zgartirish "
+        "mumkinmi?"
+    )
+
+
+# ============================================================
+# UPDATE QAYTA ISHLASH
+# ============================================================
+
+def process_update(
+    update
+):
 
     try:
 
@@ -526,18 +929,27 @@ def process_update(update):
             ""
         )
 
-        if not chat_id or not text:
+        if not chat_id:
+
+            return
+
+        if not text:
 
             return
 
         text = text.strip()
 
+        if not text:
+
+            return
+
         print(
-            "Savol:",
-            text,
+            "Savol: "
+            + text,
             flush=True
         )
 
+        # /start
         if text.startswith(
             "/start"
         ):
@@ -549,26 +961,19 @@ def process_update(update):
 
             return
 
+        # /help
         if text.startswith(
             "/help"
         ):
 
             send_message(
                 chat_id,
-                (
-                    "Savolingizni oddiy matn "
-                    "ko'rinishida yuboring.\n\n"
-                    "Masalan:\n"
-                    "• Madaniy meros obyekti nima?\n"
-                    "• Restavratsiya loyihasida "
-                    "nimalar bo'lishi kerak?\n"
-                    "• Tarixiy binoning tashqi "
-                    "ko'rinishini o'zgartirish mumkinmi?"
-                )
+                help_message()
             )
 
             return
 
+        # Savol qabul qilindi
         send_message(
             chat_id,
             "⏳ Savolingiz ko'rib chiqilmoqda..."
@@ -585,11 +990,45 @@ def process_update(update):
                 answer
             )
 
+        except urllib.error.HTTPError as e:
+
+            error_code = e.code
+
+            if error_code == 401:
+
+                message_text = (
+                    "⚠️ OpenAI API kaliti "
+                    "qabul qilinmadi.\n\n"
+                    "Render Environment Variables "
+                    "bo'limidagi OPENAI_API_KEY "
+                    "qiymatini tekshirish kerak."
+                )
+
+            elif error_code == 429:
+
+                message_text = (
+                    "⚠️ OpenAI API limiti yoki "
+                    "billing bilan bog'liq muammo."
+                )
+
+            else:
+
+                message_text = (
+                    "⚠️ OpenAI xizmatida "
+                    "texnik xatolik yuz berdi.\n"
+                    "Birozdan keyin yana urinib ko'ring."
+                )
+
+            send_message(
+                chat_id,
+                message_text
+            )
+
         except Exception as e:
 
             print(
-                "OpenAI xatosi:",
-                e,
+                "Savolga javob berishda xato: "
+                + str(e),
                 flush=True
             )
 
@@ -606,11 +1045,15 @@ def process_update(update):
     except Exception as e:
 
         print(
-            "UPDATE XATOSI:",
-            e,
+            "UPDATE XATOSI: "
+            + str(e),
             flush=True
         )
 
+
+# ============================================================
+# TELEGRAM POLLING
+# ============================================================
 
 def telegram_polling():
 
@@ -625,23 +1068,26 @@ def telegram_polling():
 
         try:
 
-            data = {
+            request_data = {
 
                 "timeout": 30,
 
                 "limit": 100,
 
-                "allowed_updates":
-                    ["message"]
+                "allowed_updates": [
+                    "message"
+                ]
             }
 
             if offset is not None:
 
-                data["offset"] = offset
+                request_data[
+                    "offset"
+                ] = offset
 
             result = telegram(
                 "getUpdates",
-                data
+                request_data
             )
 
             if not result.get(
@@ -649,8 +1095,8 @@ def telegram_polling():
             ):
 
                 print(
-                    "getUpdates xatosi:",
-                    result,
+                    "getUpdates xatosi: "
+                    + str(result),
                     flush=True
                 )
 
@@ -671,32 +1117,64 @@ def telegram_polling():
 
                 if update_id is not None:
 
-                    offset = update_id + 1
+                    offset = (
+                        update_id + 1
+                    )
 
                 process_update(
                     update
                 )
 
+        except urllib.error.HTTPError as e:
+
+            if e.code == 409:
+
+                print(
+                    "Telegram 409: boshqa "
+                    "polling instance mavjud.",
+                    flush=True
+                )
+
+                time.sleep(10)
+
+            else:
+
+                print(
+                    "Telegram HTTP xatosi: "
+                    + str(e),
+                    flush=True
+                )
+
+                time.sleep(5)
+
         except Exception as e:
 
             print(
-                "Telegram polling xatosi:",
-                e,
+                "Telegram polling xatosi: "
+                + str(e),
                 flush=True
             )
 
             time.sleep(5)
 
 
+# ============================================================
+# RENDER HEALTH SERVER
+# ============================================================
+
 class HealthHandler(
     BaseHTTPRequestHandler
 ):
 
-    def do_GET(self):
+    def do_GET(
+        self
+    ):
 
         body = (
             "Madaniy Meros AI Bot ishlayapti!"
-        ).encode("utf-8")
+        ).encode(
+            "utf-8"
+        )
 
         self.send_response(
             200
@@ -718,7 +1196,9 @@ class HealthHandler(
             body
         )
 
-    def do_HEAD(self):
+    def do_HEAD(
+        self
+    ):
 
         self.send_response(
             200
@@ -751,12 +1231,17 @@ def run_web_server():
     )
 
     print(
-        f"Web server PORT={PORT}",
+        "Web server PORT="
+        + str(PORT),
         flush=True
     )
 
     server.serve_forever()
 
+
+# ============================================================
+# MAIN
+# ============================================================
 
 def main():
 
@@ -767,6 +1252,12 @@ def main():
 
     print(
         "MADANIY MEROS AI BOT",
+        flush=True
+    )
+
+    print(
+        "Model: "
+        + OPENAI_MODEL,
         flush=True
     )
 
@@ -788,6 +1279,10 @@ def main():
 
     telegram_polling()
 
+
+# ============================================================
+# START PROGRAM
+# ============================================================
 
 if __name__ == "__main__":
 
