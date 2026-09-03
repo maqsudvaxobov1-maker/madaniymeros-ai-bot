@@ -304,4 +304,4 @@ def process_update(update):
             )
             return
 
-        if text.startswith("/help
+        if text.startswith("/help"):
