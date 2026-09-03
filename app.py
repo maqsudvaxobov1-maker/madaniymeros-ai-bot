@@ -304,4 +304,128 @@ def process_update(update):
             )
             return
 
-        if text.startswith("/help"):
+        if text.startswith("/help"):    send_message(
+        chat_id,
+        "Savolingizni oddiy matn ko'rinishida yuboring.\n\n"
+        "Masalan:\n"
+        "• Madaniy meros obyekti nima?\n"
+        "• Restavratsiya loyihasida nimalar bo'lishi kerak?\n"
+        "• Tarixiy binoning tashqi ko'rinishini o'zgartirish mumkinmi?"
+    )
+    return
+
+send_message(chat_id, "⏳ Savolingiz ko'rib chiqilmoqda...")
+
+try:
+    answer = openai_answer(text)
+    send_message(chat_id, answer)
+except Exception as e:
+    print("OpenAI xatosi:", e, flush=True)
+    send_message(
+        chat_id,
+        "⚠️ Hozircha javob tayyorlashda texnik xatolik yuz berdi.\n"
+        "Birozdan keyin yana urinib ko'ring."
+    )
+
+
+def telegram_polling():
+    print("Telegram polling boshlandi...", flush=True)
+    offset = None
+
+    while True:
+        try:
+            data = {
+                "timeout": 30,
+                "limit": 100,
+                "allowed_updates": ["message"]
+            }
+
+            if offset is not None:
+                data["offset"] = offset
+
+            result = telegram("getUpdates", data)
+
+            if not result.get("ok"):
+                print("getUpdates xatosi:", result, flush=True)
+                time.sleep(5)
+                continue
+
+            updates = result.get("result", [])
+
+            for update in updates:
+                update_id = update.get("update_id")
+
+                if update_id is not None:
+                    offset = update_id + 1
+
+                process_update(update)
+
+        except Exception as e:
+            print("Telegram polling xatosi:", e, flush=True)
+            time.sleep(5)
+
+
+class HealthHandler(BaseHTTPRequestHandler):
+
+    def do_GET(self):
+        body = "Madaniy Meros AI Bot ishlayapti!".encode("utf-8")
+
+        self.send_response(200)
+        self.send_header(
+            "Content-Type",
+            "text/plain; charset=utf-8"
+        )
+        self.send_header(
+            "Content-Length",
+            str(len(body))
+        )
+        self.end_headers()
+
+        self.wfile.write(body)
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header(
+            "Content-Type",
+            "text/plain"
+        )
+        self.end_headers()
+
+    def log_message(self, format, *args):
+        return
+
+
+def run_web_server():
+    server = ThreadingHTTPServer(
+        ("0.0.0.0", PORT),
+        HealthHandler
+    )
+
+    print(
+        f"Web server PORT={PORT}",
+        flush=True
+    )
+
+    server.serve_forever()
+
+
+def main():
+    print("====================================", flush=True)
+    print("MADANIY MEROS AI BOT", flush=True)
+    print("====================================", flush=True)
+
+    check_telegram()
+    remove_webhook()
+
+    web_thread = threading.Thread(
+        target=run_web_server,
+        daemon=True
+    )
+
+    web_thread.start()
+
+    telegram_polling()
+
+
+if __name__ == "__main__":
+    main()
