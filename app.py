@@ -3,113 +3,191 @@ import re
 import json
 import threading
 import urllib.request
-import urllib.error
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+
+# =========================
+# SOZLAMALAR
+# =========================
+
 BASE = os.path.dirname(os.path.abspath(__file__))
-KB = os.path.join(BASE, "knowledge_base_full_4.json")
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
-MODEL = os.getenv("OPENAI_MODEL", "gpt-5.6").strip()
-PORT = int(os.getenv("PORT", "10000"))
-RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "").strip().rstrip("/")
-WEBHOOK_PATH = os.getenv("WEBHOOK_PATH", "/telegram/webhook").strip()
+KB_FILE = os.path.join(
+    BASE,
+    "knowledge_base_4.json"
+)
 
-if not WEBHOOK_PATH.startswith("/"):
-    WEBHOOK_PATH = "/" + WEBHOOK_PATH
+BOT_TOKEN = os.getenv(
+    "BOT_TOKEN",
+    ""
+).strip()
+
+OPENAI_API_KEY = os.getenv(
+    "OPENAI_API_KEY",
+    ""
+).strip()
+
+MODEL = os.getenv(
+    "OPENAI_MODEL",
+    "gpt-5.6"
+).strip()
+
+PORT = int(
+    os.getenv(
+        "PORT",
+        "10000"
+    )
+)
+
+RENDER_URL = os.getenv(
+    "RENDER_EXTERNAL_URL",
+    ""
+).strip().rstrip("/")
+
+WEBHOOK_PATH = "/telegram/webhook"
 
 BHM = 440000
+
 MAX_MSG = 3900
 
+
+# =========================
+# TEKSHIRUV
+# =========================
+
 if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN topilmadi")
+    raise RuntimeError(
+        "BOT_TOKEN topilmadi"
+    )
 
 if not OPENAI_API_KEY:
-    raise RuntimeError("OPENAI_API_KEY topilmadi")
+    raise RuntimeError(
+        "OPENAI_API_KEY topilmadi"
+    )
 
 
-def norm(s):
-    s = str(s or "").lower()
+# =========================
+# MATNNI NORMALIZATSIYA
+# =========================
+
+def norm(text):
+    s = str(text or "").lower().strip()
 
     table = str.maketrans({
-        "а": "a", "б": "b", "в": "v", "г": "g",
-        "ғ": "g", "д": "d", "е": "e", "ё": "yo",
-        "ж": "j", "з": "z", "и": "i", "й": "y",
-        "к": "k", "қ": "q", "л": "l", "м": "m",
-        "н": "n", "о": "o", "п": "p", "р": "r",
-        "с": "s", "т": "t", "у": "u", "ў": "o",
-        "ф": "f", "х": "x", "ҳ": "h", "ц": "s",
-        "ч": "ch", "ш": "sh", "ъ": "", "ы": "i",
-        "ь": "", "э": "e", "ю": "yu", "я": "ya",
-        "щ": "sh"
+        "а": "a",
+        "б": "b",
+        "в": "v",
+        "г": "g",
+        "ғ": "g",
+        "д": "d",
+        "е": "e",
+        "ё": "yo",
+        "ж": "j",
+        "з": "z",
+        "и": "i",
+        "й": "y",
+        "к": "k",
+        "қ": "q",
+        "л": "l",
+        "м": "m",
+        "н": "n",
+        "о": "o",
+        "п": "p",
+        "р": "r",
+        "с": "s",
+        "т": "t",
+        "у": "u",
+        "ў": "u",
+        "ф": "f",
+        "х": "x",
+        "ҳ": "h",
+        "ц": "s",
+        "ч": "ch",
+        "ш": "sh",
+        "ъ": "",
+        "ы": "i",
+        "ь": "",
+        "э": "e",
+        "ю": "yu",
+        "я": "ya"
     })
 
     s = s.translate(table)
 
-    s = (
-        s.replace("’", "'")
-        .replace("‘", "'")
-        .replace("ʻ", "'")
-        .replace("ʼ", "'")
+    replacements = {
+        "ʼ": "'",
+        "’": "'",
+        "ʻ": "'",
+        "`": "'",
+        "–": "-",
+        "—": "-"
+    }
+
+    for a, b in replacements.items():
+        s = s.replace(a, b)
+
+    s = re.sub(
+        r"[^a-z0-9\-]+",
+        " ",
+        s
     )
 
-    s = re.sub(r"[^a-z0-9'\s-]", " ", s)
-    s = re.sub(r"\s+", " ", s)
+    s = re.sub(
+        r"\s+",
+        " ",
+        s
+    )
 
     return s.strip()
 
 
+# =========================
+# BILIM BAZASINI YUKLASH
+# =========================
+
 def load_kb():
-    if not os.path.exists(KB):
+
+    if not os.path.exists(KB_FILE):
         raise RuntimeError(
-            "knowledge_base_full.json topilmadi"
+            "knowledge_base_4.json topilmadi"
         )
 
-    with open(KB, "r", encoding="utf-8") as f:
+    with open(
+        KB_FILE,
+        "r",
+        encoding="utf-8"
+    ) as f:
         data = json.load(f)
 
     if isinstance(data, dict):
-        docs = data.get("documents", [])
-    else:
+        docs = data.get(
+            "documents",
+            []
+        )
+    elif isinstance(data, list):
         docs = data
+    else:
+        docs = []
 
     result = []
 
     for d in docs:
+
         if not isinstance(d, dict):
             continue
 
-        text = d.get("text", "")
-
-        if not text and d.get("blocks"):
-            blocks = d.get("blocks")
-
-            if isinstance(blocks, list):
-                text = "\n\n".join(
-                    str(x.get("text", x))
-                    if isinstance(x, dict)
-                    else str(x)
-                    for x in blocks
-                )
-
         result.append({
-            "title": str(d.get("title", "")),
-            "source": str(
-                d.get(
-                    "source_file",
-                    d.get("file", "")
-                )
+            "title": str(
+                d.get("title", "")
             ),
-            "text": str(text)
+            "source_file": str(
+                d.get("source_file", "")
+            ),
+            "text": str(
+                d.get("text", "")
+            )
         })
-
-    print(
-        "Bilim bazasi:",
-        len(result),
-        "ta hujjat",
-        flush=True
-    )
 
     return result
 
@@ -117,181 +195,126 @@ def load_kb():
 DOCS = load_kb()
 
 
-def doc_num(doc):
-    s = norm(
-        doc.get("source", "")
-        + " "
-        + doc.get("title", "")
-    )
-
-    m = re.search(
-        r"\b(\d{2,5})\s*-?\s*(?:son|sonli|ii)\b",
-        s
-    )
-
-    if m:
-        return m.group(1)
-
-    m = re.search(
-        r"\b(?:pq|pf)\s*-?\s*(\d{2,5})\b",
-        s
-    )
-
-    if m:
-        return m.group(1)
-
-    return ""
-
-
-def requested_num(question):
-    q = norm(question)
-
-    patterns = [
-        r"\b(?:vmq|vazirlar mahkamasi)\s*-?\s*(\d{2,5})\b",
-        r"\b(?:pq|pf)\s*-?\s*(\d{2,5})\b",
-        r"\b(\d{2,5})\s*-?\s*sonli\b",
-        r"\b(\d{2,5})\s*-?\s*son\b",
-        r"\b(\d{2,5})\s*ii\b",
-        r"\b(\d{2,5})\s+(?:qaror|qonun|farmon)\b"
-    ]
-
-    for pattern in patterns:
-        match = re.search(pattern, q)
-
-        if match:
-            return match.group(1)
-
-    return None
-
+# =========================
+# HUJJAT TOPISH
+# =========================
 
 def get_doc(number):
-    if not number:
-        return None
 
     number = str(number)
 
-    for doc in DOCS:
-        if doc_num(doc) == number:
-            return doc
+    for d in DOCS:
+
+        title = norm(
+            d["title"]
+        )
+
+        source = norm(
+            d["source_file"]
+        )
+
+        if number in title or number in source:
+            return d
 
     return None
 
 
-def chunks(text, size=1800):
-    parts = [
-        x.strip()
-        for x in re.split(
-            r"\n\s*\n|\n",
-            str(text)
-        )
-        if len(x.strip()) >= 35
-    ]
+# =========================
+# BILIM BAZASIDAN QIDIRISH
+# =========================
 
-    result = []
+def search_kb(question):
 
-    for part in parts:
-        for i in range(0, len(part), size):
-            piece = part[i:i + size].strip()
-
-            if piece:
-                result.append(piece)
-
-    return result
-
-
-def find_context(question, limit=10):
-    number = requested_num(question)
-
-    exact = get_doc(number) if number else None
-
-    pool = [exact] if exact else DOCS
+    q = norm(question)
 
     words = [
         x
-        for x in norm(question).split()
+        for x in q.split()
         if len(x) >= 3
     ]
 
-    hits = []
+    if not words:
+        return []
 
-    important = [
-        "ilmiy ekspert kengashi",
-        "tarixiy madaniy ekspertiza",
-        "davlat kadastri",
-        "davlat xizmati",
-        "ruxsatnoma",
-        "restavratsiya",
-        "muhofaza zonasi",
-        "loyiha hujjatlari",
-        "qurilish",
-        "ekspertiza",
-        "madaniy meros"
-    ]
+    scored = []
 
-    for doc in pool:
+    for d in DOCS:
 
-        title = norm(doc["title"])
+        title = norm(
+            d["title"]
+        )
 
-        for chunk in chunks(doc["text"]):
+        source = norm(
+            d["source_file"]
+        )
 
-            content = norm(chunk)
+        text = norm(
+            d["text"]
+        )
 
-            score = 0
+        score = 0
 
-            for word in words:
-                if word in content:
-                    score += 2
+        for word in words:
 
-                if word in title:
-                    score += 4
+            if word in title:
+                score += 10
 
-            question_norm = norm(question)
+            if word in source:
+                score += 8
 
-            for phrase in important:
-                if (
-                    phrase in question_norm
-                    and phrase in content
-                ):
-                    score += 10
+            score += min(
+                text.count(word),
+                10
+            )
 
-            if score > 0:
-                hits.append(
-                    (score, doc, chunk)
-                )
+        numbers = re.findall(
+            r"\b\d{2,4}\b",
+            q
+        )
 
-    hits.sort(
+        for number in numbers:
+
+            if number in title:
+                score += 30
+
+        if score > 0:
+            scored.append(
+                (score, d)
+            )
+
+    scored.sort(
         key=lambda x: x[0],
         reverse=True
     )
 
-    if exact and not hits:
-        hits = [
-            (0, exact, c)
-            for c in chunks(
-                exact["text"]
-            )[:limit]
-        ]
+    result = []
 
-    hits = hits[:limit]
+    for score, d in scored[:6]:
 
-    if not hits:
-        return "", None
+        result.append(
+            "HUJJAT: "
+            + d["title"]
+            + "\nMANBA: "
+            + d["source_file"]
+            + "\nMATN:\n"
+            + d["text"][:5000]
+        )
 
-    context = "\n\n".join(
-        "[MANBA] "
-        + doc["title"]
-        + "\n"
-        + chunk
-        for _, doc, chunk in hits
-    )
+    return result
 
-    return context[:30000], hits[0][1]
 
+# =========================
+# ANIQ JAVOBLAR
+# =========================
 
 def direct_answer(question):
+
     q = norm(question)
 
-    # 269-II-son Qonun
+    # =====================
+    # 269-II-SON QONUN
+    # =====================
+
     if (
         "269" in q
         and any(
@@ -299,51 +322,83 @@ def direct_answer(question):
             for x in [
                 "qachon",
                 "qabul",
-                "sana"
+                "sana",
+                "nomi"
             ]
         )
     ):
+
         doc = get_doc("269")
 
+        answer = (
+            "269-II-son Qonun "
+            "2001-yil 30-avgustda "
+            "qabul qilingan.\n\n"
+            "Nomi: “Madaniy meros "
+            "obyektlarini muhofaza "
+            "qilish va ulardan "
+            "foydalanish to‘g‘risida”gi "
+            "Qonun."
+        )
+
         if doc:
-            return (
-                "269-II-son "
-                "“Madaniy meros obyektlarini "
-                "muhofaza qilish va ulardan "
-                "foydalanish to‘g‘risida”gi Qonun "
-                "2001-yil 30-avgustda qabul qilingan."
-                "\n\n"
-                "Manba: "
+            answer += (
+                "\n\nManba: "
                 + doc["title"]
             )
 
-    # 119-son qaror
-if (
-    "119" in q
-    and any(
-        x in q
-        for x in [
-            "qaror",
-            "vmq",
-            "sonli"
-        ]
-    )
-):
-    doc = get_doc("119")
+        return answer
 
-    if doc:
+
+    # =====================
+    # 119-SON QAROR
+    # =====================
+
+    if (
+        "119" in q
+        and any(
+            x in q
+            for x in [
+                "qaror",
+                "vmq",
+                "sonli",
+                "qachon",
+                "qabul",
+                "sana",
+                "nomi",
+                "toliq"
+            ]
+        )
+    ):
+
+        doc = get_doc("119")
+
+        if doc:
+
+            return (
+                "119-son qaror "
+                "2021-yil 3-martda "
+                "qabul qilingan.\n\n"
+                "To‘liq nomi:\n"
+                + doc["title"]
+                + "\n\n"
+                "Manba: O‘zbekiston Respublikasi "
+                "Vazirlar Mahkamasining "
+                "2021-yil 3-martdagi "
+                "119-son qarori."
+            )
+
         return (
-            "119-сон қарор 2021 йил 3 мартда қабул қилинган.\n\n"
-            "Тўлиқ номи:\n"
-            + doc["title"]
-            + "\n\n"
-            "Манба: Ўзбекистон Республикаси Вазирлар Маҳкамасининг "
-            "2021 йил 3 мартдаги 119-сон қарори."
+            "119-son qaror "
+            "2021-yil 3-martda "
+            "qabul qilingan."
         )
 
-# Davlat xizmatlari va to‘lovlar
 
-    # Davlat xizmatlari va to‘lovlar
+    # =====================
+    # DAVLAT XIZMATLARI
+    # =====================
+
     service = any(
         x in q
         for x in [
@@ -353,205 +408,84 @@ if (
             "tulov",
             "bhm",
             "narx",
-            "qancha"
+            "qancha",
+            "agentlik"
         ]
     )
 
-    if (
-        service
-        and (
-            "agentlik" in q
-            or "xizmat" in q
-        )
-    ):
+    if service:
+
         return (
-            "Madaniy meros Agentligi bo‘yicha "
-            "davlat xizmatlari:\n\n"
+            "Madaniy meros agentligi "
+            "bo‘yicha asosiy davlat "
+            "xizmatlari:\n\n"
 
             "1. Moddiy madaniy meros "
-            "obyektlarini davlat kadastriga "
-            "kiritish va undan chiqarish — "
-            "YIDXP orqali 0,5 BHM = "
-            "220 000 so‘m.\n\n"
+            "obyektini davlat kadastriga "
+            "kiritish yoki undan chiqarish "
+            "— 0,5 BHM.\n"
+            "1 BHM 440 000 so‘m bo‘lsa, "
+            "to‘lov 220 000 so‘m.\n\n"
 
-            "2. Moddiy madaniy meros obyektining "
-            "davlat kadastriga kiritilgan yoki "
-            "kiritilmaganligi haqida ma’lumot.\n\n"
+            "2. Moddiy madaniy meros "
+            "obyektining davlat kadastriga "
+            "kiritilgan yoki kiritilmaganligi "
+            "haqida ma’lumot.\n\n"
 
-            "3. Arxeologiya ashyosining davlat "
-            "katalogiga kiritilgan yoki "
-            "kiritilmaganligi haqida ma’lumot.\n\n"
+            "3. Arxeologiya ashyosining "
+            "davlat katalogiga kiritilgan "
+            "yoki kiritilmaganligi haqida "
+            "ma’lumot.\n\n"
 
-            "4. Milliy muzey fondi ashyolari "
-            "va kolleksiyalarining davlat "
-            "katalogida hisobga olinganligi "
+            "4. Milliy muzey fondi "
+            "ashyolari va kolleksiyalarining "
+            "davlat katalogiga kiritilganligi "
             "haqida ma’lumotnoma.\n\n"
 
-            "VMQ 295-son 39-bandidagi "
-            "to‘lovlar:\n"
-
-            f"• Respublika toifasidagi tegishli "
-            f"loyihalar — 10 BHM = "
-            f"{10 * BHM:,} so‘m.\n"
-
-            f"• Mahalliy toifadagi loyihalar — "
-            f"5 BHM = {5 * BHM:,} so‘m.\n"
-
-            f"• Maxsus muhofaza qilinadigan "
-            f"tarixiy-madaniy/UNESCO hududlarida "
-            f"qurish yoki buzish loyihalari: "
-            f"yuridik shaxs — 20 BHM = "
-            f"{20 * BHM:,} so‘m; "
-            f"jismoniy shaxs — 1 BHM = "
-            f"{BHM:,} so‘m.\n"
-
-            f"• Davlat kadastriga kiritish/"
-            f"chiqarish — 50% BHM = "
-            f"{BHM // 2:,} so‘m.\n"
-
-            f"• Tarixiy-madaniy ekspertiza: "
-            f"respublika toifasi — 7 BHM = "
-            f"{7 * BHM:,} so‘m; "
-            f"mahalliy toifa — 4 BHM = "
-            f"{4 * BHM:,} so‘m.\n"
-
-            f"• Aholi punktining bosh rejasi "
-            f"loyihasi — 5 BHM = "
-            f"{5 * BHM:,} so‘m.\n\n"
-
-            "Hisob-kitob 2026-yil 1-sentabrdan "
-            "amaldagi 1 BHM = 440 000 so‘m "
-            "asosida."
+            "Ayrim to‘lovlar:\n"
+            "• 10 BHM — 4 400 000 so‘m;\n"
+            "• 5 BHM — 2 200 000 so‘m;\n"
+            "• 20 BHM — 8 800 000 so‘m;\n"
+            "• 1 BHM — 440 000 so‘m;\n"
+            "• 0,5 BHM — 220 000 so‘m;\n"
+            "• 7 BHM — 3 080 000 so‘m;\n"
+            "• 4 BHM — 1 760 000 so‘m."
         )
 
     return None
 
 
-def api(url, data=None, headers=None, timeout=90):
-    headers = dict(headers or {})
+# =========================
+# OPENAI
+# =========================
 
-    body = None
+def ask_openai(
+    question,
+    context
+):
 
-    if data is not None:
-        body = json.dumps(
-            data,
-            ensure_ascii=False
-        ).encode("utf-8")
+    system = """
+Siz “Madaniy Meros AI”
+nomli huquqiy-amaliy
+yordamchisiz.
 
-        headers["Content-Type"] = (
-            "application/json"
-        )
+Faqat berilgan bilim
+bazasidagi ma’lumotlarga
+tayangan holda javob bering.
 
-    request = urllib.request.Request(
-        url,
-        data=body,
-        headers=headers,
-        method=(
-            "POST"
-            if data is not None
-            else "GET"
-        )
-    )
+Bilim bazasida ma’lumot
+bo‘lmasa, buni ochiq ayting.
 
-    with urllib.request.urlopen(
-        request,
-        timeout=timeout
-    ) as response:
-        return json.loads(
-            response.read().decode(
-                "utf-8"
-            )
-        )
+Qonun, qaror, band, muddat,
+to‘lov yoki talabni
+o‘ylab topmang.
 
+Javobni o‘zbek tilida
+aniq va tushunarli bering.
 
-TELEGRAM = (
-    "https://api.telegram.org/bot"
-    + BOT_TOKEN
-    + "/"
-)
-
-
-def tg(method, data=None):
-    return api(
-        TELEGRAM + method,
-        data,
-        timeout=45
-    )
-
-
-def send(chat_id, text):
-    text = str(text or "").strip()
-
-    text = (
-        text.replace("**", "")
-        .replace("```", "")
-        .replace("__", "")
-        .replace("`", "")
-    )
-
-    if not text:
-        return
-
-    for i in range(
-        0,
-        len(text),
-        MAX_MSG
-    ):
-        tg(
-            "sendMessage",
-            {
-                "chat_id": chat_id,
-                "text": text[
-                    i:i + MAX_MSG
-                ]
-            }
-        )
-
-
-def answer(question):
-    direct = direct_answer(question)
-
-    if direct:
-        return direct
-
-    context, source = find_context(
-        question
-    )
-
-    system = (
-        "Siz Madaniy Meros AI — "
-        "O‘zbekiston madaniy merosi "
-        "sohasi bo‘yicha huquqiy-amaliy "
-        "yordamchisiz.\n\n"
-
-        "Asosiy manba — berilgan bilim "
-        "bazasi.\n"
-
-        "Manbada yo‘q huquqiy faktni "
-        "o‘ylab topmang.\n"
-
-        "Savol qaysi tilda berilgan bo‘lsa, "
-        "shu tilda javob bering.\n"
-
-        "Aniq, qisqa va amaliy javob bering.\n"
-
-        "Modda yoki band raqamini faqat "
-        "manbada aniq bo‘lsa ko‘rsating.\n"
-
-        "Markdown yulduzchalaridan "
-        "foydalanmang.\n\n"
-    )
-
-    if context:
-        system += (
-            "BILIM BAZASI:\n"
-            + context
-        )
-    else:
-        system += (
-            "Mos huquqiy parcha topilmadi. "
-            "Taxmin qilmang."
-        )
+Imkon qadar hujjat nomi,
+raqami va manbasini ko‘rsating.
+"""
 
     payload = {
         "model": MODEL,
@@ -562,210 +496,338 @@ def answer(question):
             },
             {
                 "role": "user",
-                "content": question
+                "content":
+                    "SAVOL:\n"
+                    + question
+                    + "\n\nBILIM BAZASI:\n"
+                    + context
             }
         ]
     }
 
-    result = api(
+    data = json.dumps(
+        payload
+    ).encode("utf-8")
+
+    req = urllib.request.Request(
         "https://api.openai.com/v1/chat/completions",
-        payload,
-        {
+        data=data,
+        headers={
+            "Content-Type":
+                "application/json",
             "Authorization":
-                "Bearer " + OPENAI_API_KEY
-        }
-    )
-
-    choices = result.get(
-        "choices",
-        []
-    )
-
-    if not choices:
-        raise RuntimeError(
-            "OpenAI javob qaytarmadi"
-        )
-
-    content = (
-        choices[0]
-        .get("message", {})
-        .get("content", "")
-    )
-
-    if isinstance(content, list):
-        content = "\n".join(
-            str(x.get("text", ""))
-            for x in content
-            if isinstance(x, dict)
-        )
-
-    content = (
-        str(content)
-        .replace("**", "")
-        .replace("```", "")
-        .replace("__", "")
-        .replace("`", "")
-        .strip()
-    )
-
-    if not content:
-        raise RuntimeError(
-            "OpenAI bo‘sh javob qaytardi"
-        )
-
-    if source:
-        content += (
-            "\n\nManba: "
-            + source["title"]
-        )
-
-    return content
-
-
-def process_update(update):
-    message = (
-        update.get("message")
-        or update.get("edited_message")
-    )
-
-    if not message:
-        return
-
-    if not isinstance(
-        message.get("text"),
-        str
-    ):
-        return
-
-    chat_id = (
-        message.get("chat") or {}
-    ).get("id")
-
-    question = message[
-        "text"
-    ].strip()
-
-    if not chat_id or not question:
-        return
-
-    print(
-        "Xabar:",
-        question,
-        flush=True
-    )
-
-    if question.startswith("/start"):
-        send(
-            chat_id,
-            "🏛 Assalomu alaykum!\n\n"
-            "Men — Madaniy Meros AI "
-            "yordamchisiman.\n\n"
-            "Madaniy meros, restavratsiya, "
-            "muhofaza, loyiha hujjatlari, "
-            "ekspertiza va normativ-huquqiy "
-            "hujjatlar bo‘yicha savolingizni "
-            "yozing.\n\n"
-            "Masalan:\n"
-            "119-sonli qaror nima haqida?"
-        )
-        return
-
-    if question.startswith("/help"):
-        send(
-            chat_id,
-            "Savolingizni oddiy tilda yozing.\n\n"
-            "Masalan:\n"
-            "• 119-sonli qaror nima haqida?\n"
-            "• 269-II-son Qonun qachon qabul qilingan?\n"
-            "• Tarixiy-madaniy ekspertiza tartibi qanday?\n"
-            "• Davlat xizmatlari va to‘lovlar qancha?"
-        )
-        return
-
-    send(
-        chat_id,
-        "⏳ Savolingiz ko‘rib chiqilmoqda..."
+                "Bearer "
+                + OPENAI_API_KEY
+        },
+        method="POST"
     )
 
     try:
-        send(
-            chat_id,
-            answer(question)
+
+        with urllib.request.urlopen(
+            req,
+            timeout=90
+        ) as response:
+
+            result = json.loads(
+                response.read().decode(
+                    "utf-8"
+                )
+            )
+
+        return (
+            result["choices"][0]
+            ["message"]["content"]
+            .strip()
         )
 
-    except urllib.error.HTTPError as e:
+    except Exception as e:
 
         print(
-            "HTTP xato:",
-            e.code,
-            flush=True
+            "OpenAI xatosi:",
+            e
         )
 
-        if e.code == 401:
-            send(
-                chat_id,
-                "⚠️ OpenAI API kaliti noto‘g‘ri."
-            )
+        return (
+            "Javob tayyorlashda "
+            "texnik xatolik yuz berdi. "
+            "Savolni yana yuboring."
+        )
 
-        elif e.code == 429:
-            send(
-                chat_id,
-                "⚠️ OpenAI API balansi yoki limiti bilan muammo."
-            )
 
-        else:
-            send(
-                chat_id,
-                "⚠️ AI xizmatida texnik xatolik yuz berdi."
+# =========================
+# SAVOLGA JAVOB
+# =========================
+
+def answer_question(question):
+
+    direct = direct_answer(
+        question
+    )
+
+    if direct:
+        return direct
+
+    chunks = search_kb(
+        question
+    )
+
+    if not chunks:
+
+        return (
+            "Savol bo‘yicha bilim "
+            "bazasida yetarli aniq "
+            "ma’lumot topilmadi.\n\n"
+            "Iltimos, hujjat raqami, "
+            "obyekt nomi yoki masalani "
+            "aniqroq yozing."
+        )
+
+    context = (
+        "\n\n----------------\n\n"
+        .join(chunks)
+    )
+
+    return ask_openai(
+        question,
+        context
+    )
+
+
+# =========================
+# TELEGRAM API
+# =========================
+
+def telegram(
+    method,
+    payload=None
+):
+
+    url = (
+        "https://api.telegram.org/"
+        "bot"
+        + BOT_TOKEN
+        + "/"
+        + method
+    )
+
+    data = None
+
+    if payload is not None:
+
+        data = urllib.parse.urlencode(
+            payload
+        ).encode("utf-8")
+
+    req = urllib.request.Request(
+        url,
+        data=data,
+        method=(
+            "POST"
+            if data
+            else "GET"
+        )
+    )
+
+    try:
+
+        with urllib.request.urlopen(
+            req,
+            timeout=30
+        ) as response:
+
+            return json.loads(
+                response.read().decode(
+                    "utf-8"
+                )
             )
 
     except Exception as e:
 
         print(
-            "Javob xatosi:",
-            repr(e),
-            flush=True
+            "Telegram API xatosi:",
+            e
         )
 
-        send(
+        return {
+            "ok": False,
+            "error": str(e)
+        }
+
+
+# =========================
+# XABAR YUBORISH
+# =========================
+
+def send_message(
+    chat_id,
+    text
+):
+
+    text = text or (
+        "Javob tayyorlanmadi."
+    )
+
+    parts = [
+        text[i:i + MAX_MSG]
+        for i in range(
+            0,
+            len(text),
+            MAX_MSG
+        )
+    ]
+
+    for part in parts:
+
+        telegram(
+            "sendMessage",
+            {
+                "chat_id":
+                    str(chat_id),
+                "text":
+                    part
+            }
+        )
+
+
+# =========================
+# TELEGRAM UPDATE
+# =========================
+
+def process_update(update):
+
+    try:
+
+        message = (
+            update.get("message")
+            or {}
+        )
+
+        chat = (
+            message.get("chat")
+            or {}
+        )
+
+        chat_id = chat.get(
+            "id"
+        )
+
+        if not chat_id:
+            return
+
+        text = (
+            message.get(
+                "text",
+                ""
+            )
+            .strip()
+        )
+
+        if not text:
+            return
+
+        if text == "/start":
+
+            send_message(
+                chat_id,
+                "Assalomu alaykum!\n\n"
+                "Men Madaniy Meros AI "
+                "yordamchisiman.\n\n"
+                "Madaniy meros obyektlari, "
+                "qonunlar, qarorlar, "
+                "davlat xizmatlari, "
+                "ekspertiza, restavratsiya "
+                "va boshqa masalalar "
+                "bo‘yicha savolingizni "
+                "yuboring."
+            )
+
+            return
+
+        answer = answer_question(
+            text
+        )
+
+        send_message(
             chat_id,
-            "⚠️ Javob tayyorlashda texnik xato yuz berdi. "
-            "Keyinroq yana urinib ko‘ring."
+            answer
         )
 
+    except Exception as e:
+
+        print(
+            "Update xatosi:",
+            e
+        )
+
+
+# =========================
+# WEB SERVER
+# =========================
 
 class Handler(
     BaseHTTPRequestHandler
 ):
 
+    def log_message(
+        self,
+        format,
+        *args
+    ):
+        return
+
     def do_GET(self):
 
-        body = (
-            "Madaniy Meros AI Bot ishlayapti!"
-            .encode("utf-8")
-        )
+        if (
+            self.path == "/"
+            or self.path == "/health"
+        ):
 
-        self.send_response(200)
+            body = (
+                b"Madaniy Meros AI is running"
+            )
 
-        self.send_header(
-            "Content-Type",
-            "text/plain; charset=utf-8"
-        )
+            self.send_response(
+                200
+            )
 
-        self.send_header(
-            "Content-Length",
-            str(len(body))
+            self.send_header(
+                "Content-Type",
+                "text/plain; charset=utf-8"
+            )
+
+            self.send_header(
+                "Content-Length",
+                str(len(body))
+            )
+
+            self.end_headers()
+
+            self.wfile.write(
+                body
+            )
+
+            return
+
+        self.send_response(
+            404
         )
 
         self.end_headers()
 
-        self.wfile.write(body)
-
     def do_POST(self):
 
-        if self.path != WEBHOOK_PATH:
-            self.send_response(404)
+        if (
+            self.path
+            != WEBHOOK_PATH
+        ):
+
+            self.send_response(
+                404
+            )
+
             self.end_headers()
+
             return
 
         try:
@@ -782,11 +844,10 @@ class Handler(
             )
 
             update = json.loads(
-                raw.decode("utf-8")
+                raw.decode(
+                    "utf-8"
+                )
             )
-
-            self.send_response(200)
-            self.end_headers()
 
             threading.Thread(
                 target=process_update,
@@ -794,106 +855,112 @@ class Handler(
                 daemon=True
             ).start()
 
+            self.send_response(
+                200
+            )
+
+            self.send_header(
+                "Content-Type",
+                "text/plain"
+            )
+
+            self.end_headers()
+
+            self.wfile.write(
+                b"OK"
+            )
+
         except Exception as e:
 
             print(
                 "Webhook xatosi:",
-                repr(e),
-                flush=True
+                e
             )
 
-            try:
-                self.send_response(200)
-                self.end_headers()
-            except Exception:
-                pass
+            self.send_response(
+                200
+            )
 
-    def log_message(
-        self,
-        format,
-        *args
-    ):
-        return
+            self.end_headers()
+
+            self.wfile.write(
+                b"OK"
+            )
 
 
-def main():
+# =========================
+# WEBHOOKNI O‘RNATISH
+# =========================
 
-    print(
-        "================================",
-        flush=True
-    )
-
-    print(
-        "MADANIY MEROS AI",
-        flush=True
-    )
-
-    print(
-        "================================",
-        flush=True
-    )
-
-    me = tg("getMe")
-
-    print(
-        "Telegram bot:",
-        me.get(
-            "result",
-            {}
-        ).get(
-            "username",
-            ""
-        ),
-        flush=True
-    )
-
-    server = ThreadingHTTPServer(
-        ("0.0.0.0", PORT),
-        Handler
-    )
-
-    threading.Thread(
-        target=server.serve_forever,
-        daemon=True
-    ).start()
+def set_webhook():
 
     if not RENDER_URL:
-        raise RuntimeError(
+
+        print(
             "RENDER_EXTERNAL_URL topilmadi"
         )
+
+        return
 
     webhook_url = (
         RENDER_URL
         + WEBHOOK_PATH
     )
 
-    print(
-        "Webhook:",
-        webhook_url,
-        flush=True
-    )
-
-    result = tg(
+    result = telegram(
         "setWebhook",
         {
-            "url": webhook_url,
-            "allowed_updates": [
-                "message",
-                "edited_message"
-            ],
-            "drop_pending_updates": True
+            "url":
+                webhook_url,
+            "drop_pending_updates":
+                "true"
         }
     )
 
     print(
-        "Webhook natijasi:",
-        result,
-        flush=True
+        "Webhook:",
+        webhook_url
     )
 
-    while True:
-        threading.Event().wait(3600)
+    print(
+        "Webhook natijasi:",
+        result
+    )
 
+
+# =========================
+# ISHGA TUSHIRISH
+# =========================
 
 if __name__ == "__main__":
-    main()
+
+    print(
+        "Madaniy Meros AI ishga tushmoqda..."
+    )
+
+    print(
+        "Bilim bazasi:",
+        KB_FILE
+    )
+
+    print(
+        "Hujjatlar soni:",
+        len(DOCS)
+    )
+
+    set_webhook()
+
+    server = ThreadingHTTPServer(
+        (
+            "0.0.0.0",
+            PORT
+        ),
+        Handler
+    )
+
+    print(
+        "Server port:",
+        PORT
+    )
+
+    server.serve_forever()
