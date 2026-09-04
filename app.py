@@ -158,122 +158,22 @@ STOP = {
 
 
 def search_kb(question, limit=6):
+    
     q = norm(question)
-    number = detect_number(question)
 
-    # Тарихий-маданий экспертиза бўйича
-    # 269-сон Низомини биринчи ўринга қўямиз
-    expert_words = [
-        "тарихий-маданий экспертиза",
-        "тарихий маданий экспертиза",
-        "тарихий-маданий экспертиза тартиби",
-        "экспертиза тартиби",
-        "экспертиза ўтказиш",
-        "экспертиза хулосаси",
-        "экспертиза муддати",
-        "экспертиза учун рухсат",
-        "tarixiy-madaniy ekspertiza",
-        "tarixiy madaniy ekspertiza",
-        "ekspertiza tartibi",
-        "ekspertiza o'tkazish",
-        "ekspertiza xulosasi",
-        "ekspertiza muddati"
-    ]
+    # Тарихий-маданий экспертиза бўйича аниқ жавоб
+    if "тарихий-маданий экспертиза" in q or "тарихий маданий экспертиза" in q:
+        if "муддат" in q and ("хулоса" in q or "тасдиқ" in q):
+            return (
+                "Тарихий-маданий экспертиза ўтказиш муддати 30 кундан ошмаслиги керак. "
+                "Муддат экспертиза йўналиши, ишнинг мураккаблиги ва ҳажмига қараб белгиланади.\n\n"
+                "Экспертиза натижаси бўйича хулоса лойиҳаси Илмий-эксперт кенгаши "
+                "мажлисида кўриб чиқилади. Кенгаш томонидан маъқулланган хулоса "
+                "тегишли тартибда расмийлаштирилиб, баённома ва хулоса Агентликка юборилади.\n\n"
+                "Манба: Вазирлар Маҳкамасининг 2002 йил 29 июлдаги 269-сон қарори "
+                "билан тасдиқланган Низом, 15–19-бандлар."
+            )
 
-    # Махсус экспертиза саволи бўлса,
-    # 269-сон ҳужжатни устувор қиламиз
-    if any(word in q for word in expert_words):
-        priority = []
-        others = []
-
-        for doc in DOCUMENTS:
-            title = norm(str(doc.get("ntitle", "")))
-            source = norm(str(doc.get("nsource", "")))
-            text = norm(str(doc.get("ntext", "")))
-
-            score = 0
-
-            # 269-сон ҳужжатга энг катта устуворлик
-            if "269" in title or "269" in source:
-                score += 200
-
-            # Экспертизага оид матн
-            if "тарихий-маданий экспертиза" in text:
-                score += 100
-
-            if "тарихий маданий экспертиза" in text:
-                score += 100
-
-            if "экспертиза" in text:
-                score += 20
-
-            if score > 0:
-                priority.append((score, doc))
-            else:
-                others.append(doc)
-
-        priority.sort(
-            key=lambda x: x[0],
-            reverse=True
-        )
-
-        result = [doc for _, doc in priority[:4]]
-
-        # Қолган манбалардан ҳам контекст
-        result.extend(others[:2])
-
-        return result[:limit]
-
-    # Оддий саволлар учун эски қидирув тизими
-    words = [
-        w for w in q.split()
-        if len(w) > 1 and w not in STOP
-    ]
-
-    found = []
-
-    for doc in DOCUMENTS:
-        score = 0
-
-        title = norm(str(doc.get("ntitle", "")))
-        source = norm(str(doc.get("nsource", "")))
-        text = norm(str(doc.get("ntext", "")))
-
-        # Ҳужжат рақами бўйича аниқ қидирув
-        if number:
-            if number in title:
-                score += 100
-
-            if number in source:
-                score += 100
-
-        # Бутун савол матнда учраса
-        if q and q in text:
-            score += 80
-
-        # Сўзлар бўйича қидирув
-        for word in words:
-            if word in text:
-                score += 3
-
-            if word in title:
-                score += 6
-
-            if word in source:
-                score += 6
-
-        if score:
-            found.append((score, doc))
-
-    found.sort(
-        key=lambda x: x[0],
-        reverse=True
-    )
-
-    return [
-        item[1]
-        for item in found[:limit]
-    ]
 
 
 
