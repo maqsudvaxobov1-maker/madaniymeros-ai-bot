@@ -7,7 +7,7 @@ import urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-KB = os.path.join(BASE, "knowledge_base_4.json")
+KB = os.path.join(BASE, "knowledge_base_full_4.json")
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
