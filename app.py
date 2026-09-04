@@ -510,49 +510,35 @@ def direct_answer(question):
             "Manba: 269-II-son Qonun, 30.08.2001."
         )
 
-    # -----------------------------------------------------
-    # 119-son qaror
-    # -----------------------------------------------------
+# -----------------------------------------------------
+# 119-son qaror — ANIQ JAVOB
+# -----------------------------------------------------
 
-    if (
-        "119" in q
-        and (
-            "qaror" in q
-            or "vmq" in q
-            or "sonli" in q
-            or "son" in q
-            or "qachon" in q
-            or "nomi" in q
-            or "toliq" in q
-        )
-    ):
-
-        doc = get_doc("119")
-
-        title = ""
-
-        if doc:
-            title = doc["title"]
-
-        if not title:
-            title = (
-                "Madaniy meros obyektlarini va "
-                "YUNESKOning Umumjahon merosi "
-                "ro‘yxatiga kiritilgan hududlarni "
-                "muhofaza qilishni kuchaytirish "
-                "chora-tadbirlari to‘g‘risida"
-            )
-
-        return (
-            "119-son Vazirlar Mahkamasi qarori "
-            "2021-yil 3-martda qabul qilingan.\n\n"
-            "To‘liq nomi:\n"
-            + title
-            + "\n\n"
-            "Manba: O‘zbekiston Respublikasi "
-            "Vazirlar Mahkamasining 2021-yil "
-            "3-martdagi 119-son qarori."
-        )
+if (
+    "119" in q
+    and (
+        "qaror" in q
+        or "vmq" in q
+        or "sonli" in q
+        or "son" in q
+        or "qachon" in q
+        or "nomi" in q
+        or "toliq" in q
+    )
+):
+    return (
+        "119-son Vazirlar Mahkamasi qarori "
+        "2021-yil 3-martda qabul qilingan.\n\n"
+        
+        "To‘liq nomi:\n"
+        "“Moddiy madaniy meros obyektlari va "
+        "YuNESKOning Umumjahon merosi ro‘yxatiga "
+        "kiritilgan hududlar muhofazasini kuchaytirish "
+        "chora-tadbirlari to‘g‘risida”.\n\n"
+        
+        "Manba: O‘zbekiston Respublikasi Vazirlar "
+        "Mahkamasining 2021-yil 3-martdagi 119-son qarori."
+    )
 
     # -----------------------------------------------------
     # Davlat xizmatlari
