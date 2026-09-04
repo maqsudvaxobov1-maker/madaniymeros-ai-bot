@@ -161,6 +161,70 @@ def search_kb(question, limit=6):
     q = norm(question)
     number = detect_number(question)
 
+    # Тарихий-маданий экспертиза бўйича
+    # 269-сон Низомини биринчи ўринга қўямиз
+    expert_words = [
+        "тарихий-маданий экспертиза",
+        "тарихий маданий экспертиза",
+        "тарихий-маданий экспертиза тартиби",
+        "экспертиза тартиби",
+        "экспертиза ўтказиш",
+        "экспертиза хулосаси",
+        "экспертиза муддати",
+        "экспертиза учун рухсат",
+        "tarixiy-madaniy ekspertiza",
+        "tarixiy madaniy ekspertiza",
+        "ekspertiza tartibi",
+        "ekspertiza o'tkazish",
+        "ekspertiza xulosasi",
+        "ekspertiza muddati"
+    ]
+
+    # Махсус экспертиза саволи бўлса,
+    # 269-сон ҳужжатни устувор қиламиз
+    if any(word in q for word in expert_words):
+        priority = []
+        others = []
+
+        for doc in DOCUMENTS:
+            title = norm(str(doc.get("ntitle", "")))
+            source = norm(str(doc.get("nsource", "")))
+            text = norm(str(doc.get("ntext", "")))
+
+            score = 0
+
+            # 269-сон ҳужжатга энг катта устуворлик
+            if "269" in title or "269" in source:
+                score += 200
+
+            # Экспертизага оид матн
+            if "тарихий-маданий экспертиза" in text:
+                score += 100
+
+            if "тарихий маданий экспертиза" in text:
+                score += 100
+
+            if "экспертиза" in text:
+                score += 20
+
+            if score > 0:
+                priority.append((score, doc))
+            else:
+                others.append(doc)
+
+        priority.sort(
+            key=lambda x: x[0],
+            reverse=True
+        )
+
+        result = [doc for _, doc in priority[:4]]
+
+        # Қолган манбалардан ҳам контекст
+        result.extend(others[:2])
+
+        return result[:limit]
+
+    # Оддий саволлар учун эски қидирув тизими
     words = [
         w for w in q.split()
         if len(w) > 1 and w not in STOP
@@ -171,24 +235,31 @@ def search_kb(question, limit=6):
     for doc in DOCUMENTS:
         score = 0
 
+        title = norm(str(doc.get("ntitle", "")))
+        source = norm(str(doc.get("nsource", "")))
+        text = norm(str(doc.get("ntext", "")))
+
+        # Ҳужжат рақами бўйича аниқ қидирув
         if number:
-            if number in doc["ntitle"]:
+            if number in title:
                 score += 100
 
-            if number in doc["nsource"]:
+            if number in source:
                 score += 100
 
-        if q and q in doc["ntext"]:
+        # Бутун савол матнда учраса
+        if q and q in text:
             score += 80
 
+        # Сўзлар бўйича қидирув
         for word in words:
-            if word in doc["ntext"]:
+            if word in text:
                 score += 3
 
-            if word in doc["ntitle"]:
+            if word in title:
                 score += 6
 
-            if word in doc["nsource"]:
+            if word in source:
                 score += 6
 
         if score:
@@ -203,6 +274,7 @@ def search_kb(question, limit=6):
         item[1]
         for item in found[:limit]
     ]
+
 
 
 def direct_answer(question):
