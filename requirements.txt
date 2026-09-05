@@ -1,0 +1,1 @@
+# Madaniy Meros AI V10 uses Python standard library only.
