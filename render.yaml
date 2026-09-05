@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: madaniy-meros-ai
+    runtime: python
+    buildCommand: python -m py_compile app.py
+    startCommand: python app.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-5-mini
