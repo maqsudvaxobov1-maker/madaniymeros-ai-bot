@@ -9,6 +9,7 @@ import threading
 import urllib.request
 import urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from official_web import search_official, format_context
 
 # ============================================================
 # MADANIY MEROS AI — PROFESSIONAL / STRICT LEGAL MODE
@@ -1252,6 +1253,13 @@ JAVOB BERISH QOIDALARI:
 12. Manbada norma yetarli bo‘lmasa:
     “Taqdim etilgan bilim bazasida bu savolga yetarli aniq ma’lumot
      topilmadi” deb ayting va qaysi ma’lumot yetishmasligini ko‘rsating.
+13. ONLINE RASMIY MANBA bo‘lsa, faqat shu kontekstdagi ishonchli davlat
+    manbalaridan fakt oling. Noma’lum saytni manba sifatida qabul qilmang.
+14. Onlayn faktga javob berishda manba nomi, sana/holat sanasi va URLni
+    ko‘rsating. Raqamning qamrovini ham yozing (masalan, “filiallar bilan”).
+15. Ikki rasmiy manbada turli raqam bo‘lsa, ularning qamrovini ajrating
+    va farqni yashirmang.
+16. Online manbada aniq fakt bo‘lmasa, taxmin qilmang va buni ochiq ayting.
 """
 
 def ask_openai(question, context):
@@ -1303,6 +1311,21 @@ def ask_openai(question, context):
         return "Javobni shakllantirishda texnik xatolik yuz berdi."
 
 # ------------------------------------------------------------
+# RASMIY ONLAYN QIDIRUV
+# ------------------------------------------------------------
+
+def should_online_search(question):
+    q = norm(question)
+    dynamic = [
+        "hozir", "amaldagi", "joriy", "2026", "eng yangi", "songgi",
+        "bugungi", "statistika", "soni", "nechta", "qancha", "tashrif",
+        "muzeylar", "muzey", "yangilangan", "oxirgi", "hozirgi"
+    ]
+    if detect_number(question) and not any(x in q for x in dynamic):
+        return False
+    return any(x in q for x in dynamic)
+
+# ------------------------------------------------------------
 # JAVOBNI YIG‘ISH
 # ------------------------------------------------------------
 
@@ -1314,6 +1337,18 @@ def answer_question(question):
 
     number = detect_number(question)
     topics = detect_topics(question)
+
+    # 2. Dynamic/statistical questions get a trusted official web check.
+    online_context = ""
+    if should_online_search(question):
+        try:
+            online_result = search_official(question, max_sources=5)
+            online_context = format_context(online_result)
+            if online_context:
+                logging.info("Rasmiy onlayn manbalar topildi: %s", len(online_result.get("sources", [])))
+        except Exception:
+            logging.exception("Rasmiy onlayn qidiruv xatosi")
+
     results = search_kb(question, limit=18)
 
     # 2. 846-specific protection: never infer an object/position without
@@ -1345,14 +1380,16 @@ def answer_question(question):
             f"Шу сабабли ҳужжатнинг мазмуни ёки бандини тахмин қилиб бермайман."
         )
 
-    if not results:
+    if not results and not online_context:
         return (
             "Тақдим этилган билим базасида бу саволга етарли аниқ "
-            "маълумот топилмади. Аниқ ҳуқуқий хулоса бериш учун "
-            "тегишли норматив ҳужжат ёки унинг банди керак."
+            "маълумот топилмади ва ишончли расмий онлайн манба ҳам топилмади. "
+            "Шу сабабли фактни тахмин қилиб бермайман."
         )
 
-    context = build_strict_context(results)
+    context = build_strict_context(results) if results else ""
+    if online_context:
+        context += "\n\n" + online_context
 
     # 4. Stronger system instruction appended at runtime.
     strict_suffix = """V14 QAT'IY HUQUQIY NAZORAT:
