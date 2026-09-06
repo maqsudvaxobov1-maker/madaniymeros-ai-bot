@@ -198,11 +198,42 @@ def _domain_queries(question):
     ]
 
 
+# Direct official pages used as a fallback when a public search engine is
+# unavailable or blocks the server. These are still restricted to the
+# whitelist above and are used only for clearly matching official facts.
+DIRECT_OFFICIAL_FALLBACKS = [
+    {
+        "match": ("muzey", "nechta"),
+        "urls": [
+            "https://stat.uz/oz/matbuot-markazi-2/qo-mita-yangiliklar-2/69102-zbekiston-muzejlariga-5-5-mln-kishi-tashrif-buyurdi",
+            "https://siat.stat.uz/data/3208/?lang=uz",
+        ],
+    },
+]
+
+def _fallback_candidates(question):
+    low = question.lower()
+    out = []
+    for rule in DIRECT_OFFICIAL_FALLBACKS:
+        if all(x in low for x in rule["match"]):
+            for url in rule["urls"]:
+                out.append({"url": url, "title": "Rasmiy statistika manbasi"})
+    return out
+
+
 def search_official(question, max_sources=5):
     """Return trusted official-source evidence. Never returns untrusted domains."""
     candidates = []
     seen = set()
     errors = []
+
+    # Direct official fallback first: do not depend on Bing for high-value
+    # current statistics.
+    for item in _fallback_candidates(question):
+        if item["url"] not in seen:
+            seen.add(item["url"])
+            item["priority"] = DOMAIN_PRIORITY.get(_host(item["url"]), 0) + 20
+            candidates.append(item)
     for query in _domain_queries(question):
         try:
             for item in _bing_search(query, max_results=5):
