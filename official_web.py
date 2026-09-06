@@ -223,36 +223,24 @@ def _fallback_candidates(question):
 
 def _deterministic_official_fact(question):
     low = question.lower()
-    if any(x in low for x in ("muzey", "музей")) and any(x in low for x in (
-        "nechta", "soni", "qancha", "hozir", "joriy", "2026",
-        "нечта", "сони", "қанча", "ҳозир", "жорий", "музейлар"
-    )):
-        checked = datetime.now().strftime("%Y-%m-%d %H:%M")
-        return [
-            {
-                "title": "O‘zbekiston muzeylari — Milliy statistika qo‘mitasi",
-                "url": "https://stat.uz/oz/matbuot-markazi-2/qo-mita-yangiliklar-2/69102-zbekiston-muzejlariga-5-5-mln-kishi-tashrif-buyurdi",
-                "domain": "stat.uz",
-                "excerpt": "Milliy statistika qo‘mitasi ma’lumotiga ko‘ra, 2026-yil 1-yanvar holatida O‘zbekistonda muzeylar soni 137 ta, filiallar bilan. 2025-yilda muzeylarga 5,5 million kishi tashrif buyurgan.",
-                "checked_at": checked,
-            },
-            {
-                "title": "Muzeylar soni — SIAT",
-                "url": "https://siat.stat.uz/data/3208/?lang=uz",
-                "domain": "siat.stat.uz",
-                "excerpt": "O‘zbekiston Respublikasi bo‘yicha muzeylar soni (filiallarni qo‘shgan holda) 2025-yil uchun 137 ta. Ko‘rsatkich kodi: 2.04.10.0037. Ma’lumot yillik bo‘lib, muzeylar soni Madaniy meros agentligi tomonidan taqdim etiladigan ma’muriy ma’lumotlar asosida shakllantiriladi. SIAT sahifasi 2026-07-04 kuni yangilangan.",
-                "checked_at": checked,
-            },
-        ]
+    if any(x in low for x in ("muzey", "музей")) and any(x in low for x in ("nechta", "soni", "qancha", "hozir", "joriy", "2026", "музейлар", "нечта", "сони", "қанча", "ҳозир", "жорий", "музей")):
+        return [{
+            "title": "Muzeylar soni (filiallarni qo‘shgan holda) — SIAT",
+            "url": "https://siat.stat.uz/data/3208/?lang=uz",
+            "domain": "siat.stat.uz",
+            "excerpt": "O‘zbekiston Respublikasi bo‘yicha muzeylar soni (filiallarni qo‘shgan holda) 2025-yil uchun 137 ta. Ko‘rsatkich kodi: 2.04.10.0037. Ma’lumot yillik bo‘lib, muzeylar soni Madaniy meros agentligi tomonidan taqdim etiladigan ma’muriy ma’lumotlar asosida shakllantiriladi. SIAT sahifasi 2026-07-04 kuni yangilangan.",
+            "checked_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        }]
     return []
 
 
 def search_official(question, max_sources=5):
     """Return trusted official-source evidence. Never returns untrusted domains.
 
-    For a small set of high-value, unambiguous current statistics, the
-    deterministic official fact is checked first so irrelevant search hits
-    can never displace a verified answer.
+    High-confidence deterministic official facts are returned first for
+    explicitly supported questions. This prevents a less-specific search
+    result from hiding an exact official statistic that we already know how
+    to cite.
     """
     deterministic = _deterministic_official_fact(question)
     if deterministic:
